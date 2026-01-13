@@ -44,7 +44,8 @@
   "author": "Samuel Maddock <sam@samuelmaddock.com>",
   "license": "SEE LICENSE IN LICENSE.md",
   "dependencies": {
-    "debug": "^4.3.1"
+    "debug": "^4.3.1",
+    "esbuild": "^0.24.2"
   },
   "devDependencies": {
     "@types/chai": "^4.2.14",
@@ -55,7 +56,6 @@
     "chai-as-promised": "^7.1.1",
     "colors": "^1.4.0",
     "electron": "^37.1.0",
-    "esbuild": "^0.24.2",
     "minimist": "^1.2.7",
     "mocha": "^8.2.1",
     "rimraf": "^6.0.1",
