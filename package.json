@@ -24,7 +24,7 @@
     "./preload": "./dist/chrome-extension-api.preload.js"
   },
   "scripts": {
-    "build": "rm -rf dist && npx esbuild src/index.ts --bundle --platform=node --target=es2020 --outfile=dist/cjs/index.js --external:electron --external:debug --external:electron-chrome-extensions/preload && npx esbuild src/index.ts --bundle --platform=node --target=es2020 --format=esm --outfile=dist/esm/index.mjs --external:electron --external:debug --external:electron-chrome-extensions/preload && npx esbuild src/preload.ts --bundle --platform=browser --target=es2020 --outfile=dist/chrome-extension-api.preload.js --external:electron --external:debug && npx esbuild src/browser-action.ts --bundle --platform=browser --target=es2020 --outfile=dist/cjs/browser-action.js --external:electron --external:debug && npx esbuild src/browser-action.ts --bundle --platform=browser --target=es2020 --format=esm --outfile=dist/esm/browser-action.mjs --external:electron --external:debug",
+    "build": "rm -rf dist && node esbuild.config.js",
     "build:types": "npx tsc",
     "clean": "rm -rf dist",
     "prepare": "npm run build",
