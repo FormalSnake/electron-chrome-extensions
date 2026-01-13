@@ -33,7 +33,7 @@ export class PopupView extends EventEmitter {
     minWidth: 25,
     minHeight: 25,
     maxWidth: 800,
-    maxHeight: 600,
+    maxHeight: 600
   }
 
   browserWindow?: BrowserWindow
@@ -44,6 +44,7 @@ export class PopupView extends EventEmitter {
   private destroyed: boolean = false
   private hidden: boolean = true
   private alignment?: string
+  private stableHeight: number = 0
 
   /** Preferred size changes are only received in Electron v12+ */
   private usingPreferredSize = supportsPreferredSize()
@@ -77,8 +78,8 @@ export class PopupView extends EventEmitter {
         nodeIntegration: false,
         nodeIntegrationInWorker: false,
         contextIsolation: true,
-        enablePreferredSizeMode: true,
-      },
+        enablePreferredSizeMode: true
+      }
     })
 
     const untypedWebContents = this.browserWindow.webContents as any
@@ -169,11 +170,11 @@ export class PopupView extends EventEmitter {
     if (!this.browserWindow || !this.parent) return
 
     const width = Math.floor(
-      Math.min(PopupView.BOUNDS.maxWidth, Math.max(rect.width || 0, PopupView.BOUNDS.minWidth)),
+      Math.min(PopupView.BOUNDS.maxWidth, Math.max(rect.width || 0, PopupView.BOUNDS.minWidth))
     )
 
     const height = Math.floor(
-      Math.min(PopupView.BOUNDS.maxHeight, Math.max(rect.height || 0, PopupView.BOUNDS.minHeight)),
+      Math.min(PopupView.BOUNDS.maxHeight, Math.max(rect.height || 0, PopupView.BOUNDS.minHeight))
     )
 
     const size = { width, height }
@@ -183,7 +184,7 @@ export class PopupView extends EventEmitter {
 
     this.browserWindow?.setBounds({
       ...this.browserWindow.getBounds(),
-      ...size,
+      ...size
     })
 
     this.emit('resized')
@@ -245,7 +246,7 @@ export class PopupView extends EventEmitter {
 
     this.browserWindow.setBounds({
       ...this.browserWindow.getBounds(),
-      ...position,
+      ...position
     })
 
     this.emit('moved')
@@ -259,7 +260,7 @@ export class PopupView extends EventEmitter {
       `((${() => {
         const rect = document.body.getBoundingClientRect()
         return { width: rect.width, height: rect.height }
-      }})())`,
+      }})())`
     )
 
     if (this.destroyed) return
@@ -271,10 +272,24 @@ export class PopupView extends EventEmitter {
   private updatePreferredSize = (event: Electron.Event, size: Electron.Size) => {
     d('updatePreferredSize', size)
     this.usingPreferredSize = true
+
+    // Once popup is shown, only allow height to increase (prevents shrinking feedback loop)
+    if (!this.hidden && this.stableHeight > 0) {
+      size = { ...size, height: Math.max(size.height, this.stableHeight) }
+    }
+
     this.setSize(size)
     this.updatePosition()
 
+    // Track stable height after showing
+    if (!this.hidden) {
+      this.stableHeight = Math.max(this.stableHeight, size.height)
+    }
+
     // Wait to reveal popup until it's sized and positioned correctly
-    if (this.hidden) this.show()
+    if (this.hidden) {
+      this.stableHeight = size.height
+      this.show()
+    }
   }
 }
