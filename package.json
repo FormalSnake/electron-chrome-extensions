@@ -24,7 +24,7 @@
     "./preload": "./dist/chrome-extension-api.preload.js"
   },
   "scripts": {
-    "build": "rm -rf dist && node esbuild.config.js",
+    "build": "rm -rf dist && bun esbuild.config.js",
     "build:types": "npx tsc",
     "clean": "rm -rf dist",
     "prepare": "npm run build",
