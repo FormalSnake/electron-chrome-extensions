@@ -7,7 +7,7 @@ enum TemplateType {
   Basic = 'basic',
   Image = 'image',
   List = 'list',
-  Progress = 'progress',
+  Progress = 'progress'
 }
 
 const getBody = (opts: chrome.notifications.NotificationOptions) => {
@@ -26,7 +26,7 @@ const getBody = (opts: chrome.notifications.NotificationOptions) => {
 }
 
 const getUrgency = (
-  priority?: number,
+  priority?: number
 ): Required<Electron.NotificationConstructorOptions>['urgency'] => {
   if (typeof priority !== 'number') {
     return 'normal'
@@ -125,7 +125,7 @@ export class NotificationsAPI {
       silent: opts.silent,
       icon,
       urgency: getUrgency(opts.priority),
-      timeoutType: opts.requireInteraction ? 'never' : 'default',
+      timeoutType: opts.requireInteraction ? 'never' : 'default'
     })
 
     this.registry.set(notificationId, notification)
@@ -158,7 +158,7 @@ export class NotificationsAPI {
   private update = (
     { extension }: ExtensionEvent,
     id: string,
-    opts: chrome.notifications.NotificationOptions,
+    opts: chrome.notifications.NotificationOptions
   ) => {
     const notificationId = createScopedIdentifier(extension, id)
 

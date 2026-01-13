@@ -8,7 +8,7 @@ const basicOpts: chrome.notifications.NotificationOptions = {
   title: 'title',
   message: 'message',
   iconUrl: 'icon_16.png',
-  silent: true,
+  silent: true
 }
 
 describe('chrome.notifications', () => {
@@ -33,7 +33,7 @@ describe('chrome.notifications', () => {
       const notificationId = uuid()
       const result = await browser.crx.exec('notifications.create', notificationId, {
         ...basicOpts,
-        iconUrl: '../chrome-browserAction/icon_16.png',
+        iconUrl: '../chrome-browserAction/icon_16.png'
       })
       expect(result).is.null
     })

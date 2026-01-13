@@ -73,12 +73,12 @@ class RoutingDelegate {
 
     const maybeListenForWorkerEvents = ({
       runningStatus,
-      versionId,
+      versionId
     }: Electron.Event<Electron.ServiceWorkersRunningStatusChangedEventParams>) => {
       if (runningStatus !== 'starting') return
 
       const serviceWorker = (observer.session as any).serviceWorkers.getWorkerFromVersionID(
-        versionId,
+        versionId
       )
       if (
         serviceWorker?.scope?.startsWith('chrome-extension://') &&
@@ -133,11 +133,11 @@ class RoutingDelegate {
         ? {
             type: event.type,
             extensionId,
-            host: event.sender,
+            host: event.sender
           }
         : {
             type: event.type,
-            extensionId,
+            extensionId
           }
     return observer?.addListener(listener, extensionId, eventName)
   }
@@ -145,7 +145,7 @@ class RoutingDelegate {
   private onRemoveListener = (
     event: Electron.IpcMainInvokeEvent,
     extensionId: string,
-    eventName: string,
+    eventName: string
   ) => {
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
@@ -153,11 +153,11 @@ class RoutingDelegate {
         ? {
             type: event.type,
             extensionId,
-            host: event.sender,
+            host: event.sender
           }
         : {
             type: event.type,
-            extensionId,
+            extensionId
           }
     return observer?.removeListener(listener, extensionId, eventName)
   }
@@ -232,7 +232,7 @@ export class ExtensionRouter {
 
   constructor(
     public session: Electron.Session,
-    private delegate: RoutingDelegate = RoutingDelegate.get(),
+    private delegate: RoutingDelegate = RoutingDelegate.get()
   ) {
     this.delegate.addObserver(this)
 
@@ -265,7 +265,7 @@ export class ExtensionRouter {
           d(`storing reference to background service worker [url:'${scope}']`)
           this.extensionWorkers.add(serviceWorker)
         }
-      },
+      }
     )
   }
 
@@ -376,7 +376,7 @@ export class ExtensionRouter {
       const manifest: chrome.runtime.Manifest = extension?.manifest
       if (!extension || !manifest.permissions?.includes(handler.permission)) {
         throw new Error(
-          `${handlerName} requires an extension with ${handler.permission} permissions`,
+          `${handlerName} requires an extension with ${handler.permission} permissions`
         )
       }
     }
@@ -398,7 +398,7 @@ export class ExtensionRouter {
       callback,
       extensionContext: typeof opts?.extensionContext === 'boolean' ? opts.extensionContext : true,
       allowRemote: typeof opts?.allowRemote === 'boolean' ? opts.allowRemote : false,
-      permission: typeof opts?.permission === 'string' ? opts.permission : undefined,
+      permission: typeof opts?.permission === 'string' ? opts.permission : undefined
     })
   }
 

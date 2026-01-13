@@ -37,18 +37,18 @@ export class PermissionsAPI {
     const manifest: chrome.runtime.Manifest = extension.manifest
     this.permissionMap.set(extension.id, {
       permissions: (manifest.permissions || []) as chrome.runtime.ManifestPermissions[],
-      origins: manifest.host_permissions || [],
+      origins: manifest.host_permissions || []
     })
   }
 
   private contains = (
     { extension }: ExtensionEvent,
-    permissions: chrome.permissions.Permissions,
+    permissions: chrome.permissions.Permissions
   ) => {
     const currentPermissions = this.permissionMap.get(extension.id)!
     const hasPermissions = permissions.permissions
       ? permissions.permissions.every((permission) =>
-          currentPermissions.permissions.includes(permission),
+          currentPermissions.permissions.includes(permission)
         )
       : true
     const hasOrigins = permissions.origins
@@ -68,11 +68,11 @@ export class PermissionsAPI {
 
   private request = async (
     { extension }: ExtensionEvent,
-    request: chrome.permissions.Permissions,
+    request: chrome.permissions.Permissions
   ) => {
     const declaredPermissions = new Set([
       ...(extension.manifest.permissions || []),
-      ...(extension.manifest.optional_permissions || []),
+      ...(extension.manifest.optional_permissions || [])
     ])
 
     if (request.permissions && !request.permissions.every((p) => declaredPermissions.has(p))) {

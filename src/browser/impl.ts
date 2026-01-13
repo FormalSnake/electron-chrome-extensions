@@ -1,7 +1,7 @@
 /** App-specific implementation details for extensions. */
 export interface ChromeExtensionImpl {
   createTab?(
-    details: chrome.tabs.CreateProperties,
+    details: chrome.tabs.CreateProperties
   ): Promise<[Electron.WebContents, Electron.BaseWindow]>
   selectTab?(tab: Electron.WebContents, window: Electron.BaseWindow): void
   removeTab?(tab: Electron.WebContents, window: Electron.BaseWindow): void
@@ -17,6 +17,6 @@ export interface ChromeExtensionImpl {
 
   requestPermissions?(
     extension: Electron.Extension,
-    permissions: chrome.permissions.Permissions,
+    permissions: chrome.permissions.Permissions
   ): Promise<boolean>
 }

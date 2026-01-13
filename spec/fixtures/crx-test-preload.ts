@@ -10,7 +10,7 @@ const api = {
   },
   invokeIpc(channel: string, ...args: any[]) {
     return ipcRenderer.invoke(channel, ...args)
-  },
+  }
 }
 
 try {

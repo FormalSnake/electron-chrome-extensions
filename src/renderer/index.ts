@@ -57,10 +57,10 @@ export const injectExtensionAPIs = () => {
     application: string,
     receive: (message: any) => void,
     disconnect: () => void,
-    callback: ConnectNativeCallback,
+    callback: ConnectNativeCallback
   ) => {
     const connectionId = (contextBridge as any).executeInMainWorld({
-      func: () => crypto.randomUUID(),
+      func: () => crypto.randomUUID()
     })
     invokeExtension(extensionId, 'runtime.connectNative', {}, connectionId, application)
     const onMessage = (_event: Electron.IpcRendererEvent, message: any) => {
@@ -86,7 +86,7 @@ export const injectExtensionAPIs = () => {
     addExtensionListener,
     removeExtensionListener,
     connectNative,
-    disconnectNative,
+    disconnectNative
   }
 
   // Function body to run in the main world.
@@ -147,7 +147,7 @@ export const injectExtensionAPIs = () => {
       }
       addRules(
         rules: chrome.events.Rule[],
-        callback?: ((rules: chrome.events.Rule[]) => void) | undefined,
+        callback?: ((rules: chrome.events.Rule[]) => void) | undefined
       ): void {
         throw new Error('Method not implemented.')
       }
@@ -162,7 +162,7 @@ export const injectExtensionAPIs = () => {
       get() {}
       clear() {}
       onChange = {
-        addListener: () => {},
+        addListener: () => {}
       }
     }
 
@@ -238,7 +238,7 @@ export const injectExtensionAPIs = () => {
       [apiName in keyof typeof chrome]: {
         shouldInject?: () => boolean
         factory: (
-          base: DeepPartial<(typeof chrome)[apiName]>,
+          base: DeepPartial<(typeof chrome)[apiName]>
         ) => DeepPartial<(typeof chrome)[apiName]>
       }
     }
@@ -256,7 +256,7 @@ export const injectExtensionAPIs = () => {
               if (manifest.manifest_version === 3) {
                 // TODO(mv3): might need to use offscreen document to serialize
                 console.warn(
-                  'action.setIcon with imageData is not yet supported by electron-chrome-extensions',
+                  'action.setIcon with imageData is not yet supported by electron-chrome-extensions'
                 )
                 details.imageData = undefined
               } else if (details.imageData instanceof ImageData) {
@@ -267,13 +267,13 @@ export const injectExtensionAPIs = () => {
                     obj[pair[0]] = imageData2base64(pair[1])
                     return obj
                   },
-                  {},
+                  {}
                 )
               }
             }
 
             return [details]
-          },
+          }
         }),
 
         setPopup: invokeExtension('browserAction.setPopup'),
@@ -292,7 +292,7 @@ export const injectExtensionAPIs = () => {
 
         openPopup: invokeExtension('browserAction.openPopup'),
 
-        onClicked: new ExtensionEvent('browserAction.onClicked'),
+        onClicked: new ExtensionEvent('browserAction.onClicked')
       }
 
       return api
@@ -304,12 +304,12 @@ export const injectExtensionAPIs = () => {
     const apiDefinitions: Partial<APIFactoryMap> = {
       action: {
         shouldInject: () => manifest.manifest_version === 3 && !!manifest.action,
-        factory: browserActionFactory,
+        factory: browserActionFactory
       },
 
       browserAction: {
         shouldInject: () => manifest.manifest_version === 2 && !!manifest.browser_action,
-        factory: browserActionFactory,
+        factory: browserActionFactory
       },
 
       commands: {
@@ -317,9 +317,9 @@ export const injectExtensionAPIs = () => {
           return {
             ...base,
             getAll: invokeExtension('commands.getAll'),
-            onCommand: new ExtensionEvent('commands.onCommand'),
+            onCommand: new ExtensionEvent('commands.onCommand')
           }
-        },
+        }
       },
 
       contextMenus: {
@@ -343,7 +343,7 @@ export const injectExtensionAPIs = () => {
             ...base,
             create: function (
               createProperties: chrome.contextMenus.CreateProperties,
-              callback?: Function,
+              callback?: Function
             ) {
               if (typeof createProperties.id === 'undefined') {
                 createProperties.id = `${++menuCounter}`
@@ -361,11 +361,11 @@ export const injectExtensionAPIs = () => {
             removeAll: invokeExtension('contextMenus.removeAll'),
             onClicked: new ExtensionEvent<
               (info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Tab) => void
-            >('contextMenus.onClicked'),
+            >('contextMenus.onClicked')
           }
 
           return api
-        },
+        }
       },
 
       cookies: {
@@ -377,9 +377,9 @@ export const injectExtensionAPIs = () => {
             set: invokeExtension('cookies.set'),
             remove: invokeExtension('cookies.remove'),
             getAllCookieStores: invokeExtension('cookies.getAllCookieStores'),
-            onChanged: new ExtensionEvent('cookies.onChanged'),
+            onChanged: new ExtensionEvent('cookies.onChanged')
           }
-        },
+        }
       },
 
       // TODO: implement
@@ -403,9 +403,9 @@ export const injectExtensionAPIs = () => {
             onChanged: new ExtensionEvent('downloads.onChanged'),
             onCreated: new ExtensionEvent('downloads.onCreated'),
             onDeterminingFilename: new ExtensionEvent('downloads.onDeterminingFilename'),
-            onErased: new ExtensionEvent('downloads.onErased'),
+            onErased: new ExtensionEvent('downloads.onErased')
           }
-        },
+        }
       },
 
       extension: {
@@ -414,16 +414,16 @@ export const injectExtensionAPIs = () => {
             ...base,
             isAllowedFileSchemeAccess: invokeExtension('extension.isAllowedFileSchemeAccess', {
               noop: true,
-              defaultResponse: false,
+              defaultResponse: false
             }),
             isAllowedIncognitoAccess: invokeExtension('extension.isAllowedIncognitoAccess', {
               noop: true,
-              defaultResponse: false,
+              defaultResponse: false
             }),
             // TODO: Add native implementation
-            getViews: () => [],
+            getViews: () => []
           }
-        },
+        }
       },
 
       i18n: {
@@ -445,9 +445,9 @@ export const injectExtensionAPIs = () => {
               }
               return Promise.resolve(results)
             },
-            getMessage: (messageName: string) => messageName,
+            getMessage: (messageName: string) => messageName
           }
-        },
+        }
       },
 
       notifications: {
@@ -461,9 +461,9 @@ export const injectExtensionAPIs = () => {
             update: invokeExtension('notifications.update'),
             onClicked: new ExtensionEvent('notifications.onClicked'),
             onButtonClicked: new ExtensionEvent('notifications.onButtonClicked'),
-            onClosed: new ExtensionEvent('notifications.onClosed'),
+            onClosed: new ExtensionEvent('notifications.onClosed')
           }
-        },
+        }
       },
 
       permissions: {
@@ -475,9 +475,9 @@ export const injectExtensionAPIs = () => {
             remove: invokeExtension('permissions.remove'),
             request: invokeExtension('permissions.request'),
             onAdded: new ExtensionEvent('permissions.onAdded'),
-            onRemoved: new ExtensionEvent('permissions.onRemoved'),
+            onRemoved: new ExtensionEvent('permissions.onRemoved')
           }
-        },
+        }
       },
 
       privacy: {
@@ -486,18 +486,18 @@ export const injectExtensionAPIs = () => {
             ...base,
             network: {
               networkPredictionEnabled: new ChromeSetting(),
-              webRTCIPHandlingPolicy: new ChromeSetting(),
+              webRTCIPHandlingPolicy: new ChromeSetting()
             },
             services: {
               autofillAddressEnabled: new ChromeSetting(),
               autofillCreditCardEnabled: new ChromeSetting(),
-              passwordSavingEnabled: new ChromeSetting(),
+              passwordSavingEnabled: new ChromeSetting()
             },
             websites: {
-              hyperlinkAuditingEnabled: new ChromeSetting(),
-            },
+              hyperlinkAuditingEnabled: new ChromeSetting()
+            }
           }
-        },
+        }
       },
 
       runtime: {
@@ -515,9 +515,9 @@ export const injectExtensionAPIs = () => {
               return port
             },
             openOptionsPage: invokeExtension('runtime.openOptionsPage'),
-            sendNativeMessage: invokeExtension('runtime.sendNativeMessage'),
+            sendNativeMessage: invokeExtension('runtime.sendNativeMessage')
           }
-        },
+        }
       },
 
       storage: {
@@ -527,9 +527,9 @@ export const injectExtensionAPIs = () => {
             ...base,
             // TODO: provide a backend for browsers to opt-in to
             managed: local,
-            sync: local,
+            sync: local
           }
-        },
+        }
       },
 
       tabs: {
@@ -540,7 +540,7 @@ export const injectExtensionAPIs = () => {
             executeScript: async function (
               arg1: unknown,
               arg2: unknown,
-              arg3: unknown,
+              arg3: unknown
             ): Promise<any> {
               // Electron's implementation of chrome.tabs.executeScript is in
               // C++, but it doesn't support implicit execution in the active
@@ -549,14 +549,14 @@ export const injectExtensionAPIs = () => {
               if (typeof arg1 === 'object') {
                 const [activeTab] = await api.query({
                   active: true,
-                  windowId: chrome.windows.WINDOW_ID_CURRENT,
+                  windowId: chrome.windows.WINDOW_ID_CURRENT
                 })
                 return api.executeScript(activeTab.id, arg1, arg2)
               } else {
                 return (base.executeScript as typeof chrome.tabs.executeScript)(
                   arg1 as number,
                   arg2 as chrome.tabs.InjectDetails,
-                  arg3 as () => {},
+                  arg3 as () => {}
                 )
               }
             },
@@ -574,18 +574,18 @@ export const injectExtensionAPIs = () => {
             onRemoved: new ExtensionEvent('tabs.onRemoved'),
             onUpdated: new ExtensionEvent('tabs.onUpdated'),
             onActivated: new ExtensionEvent('tabs.onActivated'),
-            onReplaced: new ExtensionEvent('tabs.onReplaced'),
+            onReplaced: new ExtensionEvent('tabs.onReplaced')
           }
           return api
-        },
+        }
       },
 
       topSites: {
         factory: () => {
           return {
-            get: invokeExtension('topSites.get', { noop: true, defaultResponse: [] }),
+            get: invokeExtension('topSites.get', { noop: true, defaultResponse: [] })
           }
-        },
+        }
       },
 
       webNavigation: {
@@ -598,26 +598,26 @@ export const injectExtensionAPIs = () => {
             onCommitted: new ExtensionEvent('webNavigation.onCommitted'),
             onCompleted: new ExtensionEvent('webNavigation.onCompleted'),
             onCreatedNavigationTarget: new ExtensionEvent(
-              'webNavigation.onCreatedNavigationTarget',
+              'webNavigation.onCreatedNavigationTarget'
             ),
             onDOMContentLoaded: new ExtensionEvent('webNavigation.onDOMContentLoaded'),
             onErrorOccurred: new ExtensionEvent('webNavigation.onErrorOccurred'),
             onHistoryStateUpdated: new ExtensionEvent('webNavigation.onHistoryStateUpdated'),
             onReferenceFragmentUpdated: new ExtensionEvent(
-              'webNavigation.onReferenceFragmentUpdated',
+              'webNavigation.onReferenceFragmentUpdated'
             ),
-            onTabReplaced: new ExtensionEvent('webNavigation.onTabReplaced'),
+            onTabReplaced: new ExtensionEvent('webNavigation.onTabReplaced')
           }
-        },
+        }
       },
 
       webRequest: {
         factory: (base) => {
           return {
             ...base,
-            onHeadersReceived: new ExtensionEvent('webRequest.onHeadersReceived'),
+            onHeadersReceived: new ExtensionEvent('webRequest.onHeadersReceived')
           }
-        },
+        }
       },
 
       windows: {
@@ -636,10 +636,10 @@ export const injectExtensionAPIs = () => {
             onCreated: new ExtensionEvent('windows.onCreated'),
             onRemoved: new ExtensionEvent('windows.onRemoved'),
             onFocusChanged: new ExtensionEvent('windows.onFocusChanged'),
-            onBoundsChanged: new ExtensionEvent('windows.onBoundsChanged'),
+            onBoundsChanged: new ExtensionEvent('windows.onBoundsChanged')
           }
-        },
-      },
+        }
+      }
     }
 
     // Initialize APIs
@@ -654,7 +654,7 @@ export const injectExtensionAPIs = () => {
       Object.defineProperty(chrome, apiName, {
         value: api.factory(baseApi),
         enumerable: true,
-        configurable: true,
+        configurable: true
       })
     })
 
@@ -679,7 +679,7 @@ export const injectExtensionAPIs = () => {
     // Mutate global 'chrome' object with additional APIs in the main world.
     if ('executeInMainWorld' in contextBridge) {
       ;(contextBridge as any).executeInMainWorld({
-        func: mainWorldScript,
+        func: mainWorldScript
       })
     } else {
       // TODO(mv3): remove webFrame usage

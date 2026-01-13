@@ -72,7 +72,7 @@ class RemoteControlApp {
         {
           host: '127.0.0.1',
           port: this.port,
-          method: 'POST',
+          method: 'POST'
         },
         (res) => {
           const chunks = [] as Buffer[]
@@ -87,7 +87,7 @@ class RemoteControlApp {
               resolve(ret.result)
             }
           })
-        },
+        }
       )
       req.write(js)
       req.end()
@@ -122,7 +122,7 @@ export async function startRemoteControlApp() {
 export async function getFiles(directoryPath: string, { filter = null }: any = {}) {
   const files: string[] = []
   const walker = require('walkdir').walk(directoryPath, {
-    no_recurse: true,
+    no_recurse: true
   })
   walker.on('file', (file: string) => {
     if (!filter || filter(file)) {

@@ -14,7 +14,7 @@ if (process.platform !== 'linux') {
     const server = useServer()
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'rpc',
+      extensionName: 'rpc'
     })
     const hostApplication = 'com.crx.test'
 

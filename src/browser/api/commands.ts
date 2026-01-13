@@ -32,7 +32,7 @@ export class CommandsAPI {
       commands.push({
         name,
         description: details.description,
-        shortcut: '',
+        shortcut: ''
       })
     }
   }

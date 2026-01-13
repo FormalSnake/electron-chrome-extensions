@@ -11,7 +11,7 @@ export async function readUrlOverrides(ctx: ExtensionContext, extension: Electro
       const validatedPath = await validateExtensionResource(extension, uri)
       if (!validatedPath) {
         console.error(
-          `Extension ${extension.id} attempted to override ${name} with invalid resource: ${uri}`,
+          `Extension ${extension.id} attempted to override ${name} with invalid resource: ${uri}`
         )
         continue
       }

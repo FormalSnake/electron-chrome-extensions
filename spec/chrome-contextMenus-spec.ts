@@ -9,7 +9,7 @@ describe('chrome.contextMenus', () => {
   const server = useServer()
   const browser = useExtensionBrowser({
     url: server.getUrl,
-    extensionName: 'rpc',
+    extensionName: 'rpc'
   })
 
   const getContextMenuItems = async () => {
@@ -67,7 +67,7 @@ describe('chrome.contextMenus', () => {
       const ipcName = 'create-callback'
       await browser.crx.exec('contextMenus.create', {
         title: 'callback',
-        onclick: { __IPC_FN__: ipcName },
+        onclick: { __IPC_FN__: ipcName }
       })
       const items = await getContextMenuItems()
       const p = once(ipcMain, ipcName)

@@ -9,7 +9,7 @@ const eventNames = [
   'onErrorOccurred',
   'onHistoryStateUpdated',
   'onReferenceFragmentUpdated',
-  'onTabReplaced',
+  'onTabReplaced'
 ]
 
 let activeTabId

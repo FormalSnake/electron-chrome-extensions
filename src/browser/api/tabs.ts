@@ -61,7 +61,7 @@ export class TabsAPI {
       // an official Electron API such as discarded tabs. App developers can
       // emit this event to trigger chrome.tabs.onUpdated if a property has
       // changed.
-      'tab-updated',
+      'tab-updated'
     ]
 
     const updateHandler = () => {
@@ -121,7 +121,7 @@ export class TabsAPI {
       title: tab.getTitle(),
       url: tab.getURL(), // TODO: tab.mainFrame.url (Electron 12)
       width,
-      windowId: win ? win.id : -1,
+      windowId: win ? win.id : -1
     }
 
     if (typeof this.ctx.store.impl.assignTabDetails === 'function') {
@@ -339,7 +339,7 @@ export class TabsAPI {
       'pinned',
       'status',
       'title',
-      'url',
+      'url'
     ]
 
     let didUpdate = false
@@ -376,7 +376,7 @@ export class TabsAPI {
 
     this.ctx.router.broadcastEvent('tabs.onRemoved', tabId, {
       windowId,
-      isWindowClosing: win ? win.isDestroyed() : false,
+      isWindowClosing: win ? win.isDestroyed() : false
     })
   }
 
@@ -399,7 +399,7 @@ export class TabsAPI {
 
     this.ctx.router.broadcastEvent('tabs.onActivated', {
       tabId,
-      windowId: win?.id,
+      windowId: win?.id
     })
   }
 }

@@ -26,7 +26,7 @@ const getFrameType = (frame: Electron.WebFrameMain) =>
 const getDocumentLifecycle = (frame: Electron.WebFrameMain): DocumentLifecycle => 'active' as const
 
 const getFrameDetails = (
-  frame: Electron.WebFrameMain,
+  frame: Electron.WebFrameMain
 ): chrome.webNavigation.GetFrameResultDetails => ({
   // TODO(mv3): implement new properties
   url: frame.url,
@@ -36,10 +36,10 @@ const getFrameDetails = (
   frameType: getFrameType(frame),
   // FIXME: frameId is missing from @types/chrome
   ...{
-    frameId: getFrameId(frame),
+    frameId: getFrameId(frame)
   },
   parentDocumentId: undefined,
-  parentFrameId: getParentFrameId(frame),
+  parentFrameId: getParentFrameId(frame)
 })
 
 export class WebNavigationAPI {
@@ -76,7 +76,7 @@ export class WebNavigationAPI {
 
   private getFrame(
     event: ExtensionEvent,
-    details: chrome.webNavigation.GetFrameDetails,
+    details: chrome.webNavigation.GetFrameDetails
   ): chrome.webNavigation.GetFrameResultDetails | null {
     const tab = this.ctx.store.getTabById(details.tabId)
     if (!tab) return null
@@ -96,7 +96,7 @@ export class WebNavigationAPI {
 
   private getAllFrames(
     event: ExtensionEvent,
-    details: chrome.webNavigation.GetFrameDetails,
+    details: chrome.webNavigation.GetFrameDetails
   ): chrome.webNavigation.GetAllFrameResultDetails[] | null {
     const tab = this.ctx.store.getTabById(details.tabId)
     if (!tab || !('mainFrame' in tab)) return []
@@ -110,7 +110,7 @@ export class WebNavigationAPI {
 
   private onCreatedNavigationTarget = (
     tab: Electron.WebContents,
-    { url, frame }: Electron.Event<Electron.WebContentsWillNavigateEventParams>,
+    { url, frame }: Electron.Event<Electron.WebContentsWillNavigateEventParams>
   ) => {
     if (!frame) return
 
@@ -120,7 +120,7 @@ export class WebNavigationAPI {
       sourceFrameId: getFrameId(frame),
       url,
       tabId: tab.id,
-      timeStamp: Date.now(),
+      timeStamp: Date.now()
     }
     this.sendNavigationEvent('onCreatedNavigationTarget', details)
   }
@@ -130,8 +130,8 @@ export class WebNavigationAPI {
     {
       url,
       isSameDocument,
-      frame,
-    }: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
+      frame
+    }: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>
   ) => {
     if (isSameDocument) return
     if (!frame) return
@@ -144,7 +144,7 @@ export class WebNavigationAPI {
       processId: frame ? frame.processId : -1,
       tabId: tab.id,
       timeStamp: Date.now(),
-      url,
+      url
     }
 
     this.sendNavigationEvent('onBeforeNavigate', details)
@@ -158,7 +158,7 @@ export class WebNavigationAPI {
     _httpStatusText: string,
     _isMainFrame: boolean,
     frameProcessId: number,
-    frameRoutingId: number,
+    frameRoutingId: number
   ) => {
     const frame = getFrame(frameProcessId, frameRoutingId)
     if (!frame) return
@@ -167,7 +167,7 @@ export class WebNavigationAPI {
       frameId: getFrameId(frame),
       // NOTE: workaround for property missing in type
       ...{
-        parentFrameId: getParentFrameId(frame),
+        parentFrameId: getParentFrameId(frame)
       },
       frameType: getFrameType(frame),
       transitionType: '', // TODO(mv3)
@@ -176,7 +176,7 @@ export class WebNavigationAPI {
       processId: frameProcessId,
       tabId: tab.id,
       timeStamp: Date.now(),
-      url,
+      url
     }
     this.sendNavigationEvent('onCommitted', details)
   }
@@ -187,7 +187,7 @@ export class WebNavigationAPI {
     url: string,
     isMainFrame: boolean,
     frameProcessId: number,
-    frameRoutingId: number,
+    frameRoutingId: number
   ) => {
     const frame = getFrame(frameProcessId, frameRoutingId)
     if (!frame) return
@@ -204,7 +204,7 @@ export class WebNavigationAPI {
       processId: frameProcessId,
       tabId: tab.id,
       timeStamp: Date.now(),
-      url,
+      url
     }
     this.sendNavigationEvent('onHistoryStateUpdated', details)
   }
@@ -218,7 +218,7 @@ export class WebNavigationAPI {
       processId: frame.processId,
       tabId: tab.id,
       timeStamp: Date.now(),
-      url: frame.url,
+      url: frame.url
     }
     this.sendNavigationEvent('onDOMContentLoaded', details)
 
@@ -232,7 +232,7 @@ export class WebNavigationAPI {
     event: Electron.Event,
     isMainFrame: boolean,
     frameProcessId: number,
-    frameRoutingId: number,
+    frameRoutingId: number
   ) => {
     const frame = getFrame(frameProcessId, frameRoutingId)
     if (!frame) return
@@ -246,7 +246,7 @@ export class WebNavigationAPI {
       processId: frameProcessId,
       tabId: tab.id,
       timeStamp: Date.now(),
-      url,
+      url
     }
     this.sendNavigationEvent('onCompleted', details)
   }

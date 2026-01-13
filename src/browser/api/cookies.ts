@@ -3,11 +3,11 @@ import { ExtensionEvent } from '../router'
 
 enum CookieStoreID {
   Default = '0',
-  Incognito = '1',
+  Incognito = '1'
 }
 
 const onChangedCauseTranslation: { [key: string]: string } = {
-  'expired-overwrite': 'expired_overwrite',
+  'expired-overwrite': 'expired_overwrite'
 }
 
 const createCookieDetails = (cookie: Electron.Cookie): chrome.cookies.Cookie => ({
@@ -18,7 +18,7 @@ const createCookieDetails = (cookie: Electron.Cookie): chrome.cookies.Cookie => 
   path: cookie.path || '',
   httpOnly: Boolean(cookie.httpOnly),
   secure: Boolean(cookie.secure),
-  storeId: CookieStoreID.Default,
+  storeId: CookieStoreID.Default
 })
 
 export class CookiesAPI {
@@ -39,12 +39,12 @@ export class CookiesAPI {
 
   private async get(
     event: ExtensionEvent,
-    details: chrome.cookies.CookieDetails,
+    details: chrome.cookies.CookieDetails
   ): Promise<chrome.cookies.Cookie | null> {
     // TODO: storeId
     const cookies = await this.cookies.get({
       url: details.url,
-      name: details.name,
+      name: details.name
     })
 
     // TODO: If more than one cookie of the same name exists for the given URL,
@@ -55,7 +55,7 @@ export class CookiesAPI {
 
   private async getAll(
     event: ExtensionEvent,
-    details: chrome.cookies.GetAllDetails,
+    details: chrome.cookies.GetAllDetails
   ): Promise<chrome.cookies.Cookie[]> {
     // TODO: storeId
     const cookies = await this.cookies.get({
@@ -64,7 +64,7 @@ export class CookiesAPI {
       domain: details.domain,
       path: details.path,
       secure: details.secure,
-      session: details.session,
+      session: details.session
     })
 
     return cookies.map(createCookieDetails)
@@ -72,7 +72,7 @@ export class CookiesAPI {
 
   private async set(
     event: ExtensionEvent,
-    details: chrome.cookies.SetDetails,
+    details: chrome.cookies.SetDetails
   ): Promise<chrome.cookies.Cookie | null> {
     await this.cookies.set(details)
     const cookies = await this.cookies.get(details)
@@ -81,7 +81,7 @@ export class CookiesAPI {
 
   private async remove(
     event: ExtensionEvent,
-    details: chrome.cookies.CookieDetails,
+    details: chrome.cookies.CookieDetails
   ): Promise<chrome.cookies.CookieDetails | null> {
     try {
       await this.cookies.remove(details.url, details.name)
@@ -102,12 +102,12 @@ export class CookiesAPI {
     event: Electron.Event,
     cookie: Electron.Cookie,
     cause: string,
-    removed: boolean,
+    removed: boolean
   ) => {
     const changeInfo: chrome.cookies.CookieChangeInfo = {
       cause: onChangedCauseTranslation[cause] || cause,
       cookie: createCookieDetails(cookie),
-      removed,
+      removed
     }
 
     this.ctx.router.broadcastEvent('cookies.onChanged', changeInfo)

@@ -30,7 +30,7 @@ async function createSEA() {
     'NODE_SEA_BLOB',
     `${basePath}${seaBlobName}`,
     '--sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
-    ...(process.platform === 'darwin' ? ['--macho-segment-name NODE_SEA'] : []),
+    ...(process.platform === 'darwin' ? ['--macho-segment-name NODE_SEA'] : [])
   ]
   await exec(buildCmd.join(' '), { cwd: outDir })
 
@@ -48,7 +48,7 @@ async function installConfig(extensionIds) {
     description: 'electron-chrome-extensions test',
     path: path.join(outDir, exeName),
     type: 'stdio',
-    allowed_origins: extensionIds.map((id) => `chrome-extension://${id}/`),
+    allowed_origins: extensionIds.map((id) => `chrome-extension://${id}/`)
   }
 
   const writeManifest = async (manifestPath) => {
@@ -66,7 +66,7 @@ async function installConfig(extensionIds) {
         'Library',
         'Application Support',
         'Electron',
-        'NativeMessagingHosts',
+        'NativeMessagingHosts'
       )
       await writeManifest(manifestDir)
       break
@@ -77,12 +77,12 @@ async function installConfig(extensionIds) {
         'AppData',
         'Roaming',
         'Electron',
-        'NativeMessagingHosts',
+        'NativeMessagingHosts'
       )
       const manifestPath = await writeManifest(manifestDir)
       const registryKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${hostName}`
       await exec(`reg add "${registryKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, {
-        stdio: 'inherit',
+        stdio: 'inherit'
       })
       break
     }

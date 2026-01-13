@@ -64,7 +64,7 @@ export const injectBrowserAction = () => {
         invoke('browserAction.removeObserver', partition)
         observerCounts.delete(partition)
       }
-    },
+    }
   }
 
   ipcRenderer.on('browserAction.update', () => {
@@ -171,8 +171,8 @@ export const injectBrowserAction = () => {
             x: rect.left,
             y: rect.top,
             width: rect.width,
-            height: rect.height,
-          },
+            height: rect.height
+          }
         })
       }
 
@@ -208,7 +208,7 @@ export const injectBrowserAction = () => {
         const resizeType = 2
         const searchParams = new URLSearchParams({
           tabId: `${this.tab}`,
-          partition: `${this.partition || DEFAULT_PARTITION}`,
+          partition: `${this.partition || DEFAULT_PARTITION}`
         })
         if (info.iconModified) {
           searchParams.append('t', info.iconModified)
@@ -417,7 +417,7 @@ export const injectBrowserAction = () => {
           await browserAction.getState(this.partition || DEFAULT_PARTITION)
         } catch {
           console.error(
-            `browser-action-list failed to update [tab: ${this.tab}, partition: '${this.partition}']`,
+            `browser-action-list failed to update [tab: ${this.tab}, partition: '${this.partition}']`
           )
         }
       }
@@ -429,12 +429,12 @@ export const injectBrowserAction = () => {
         // Create or update action buttons
         for (const action of state.actions) {
           let browserActionNode = this.shadowRoot?.querySelector(
-            `[id=${action.id}]`,
+            `[id=${action.id}]`
           ) as BrowserActionElement
 
           if (!browserActionNode) {
             const node = document.createElement('button', {
-              is: 'browser-action',
+              is: 'browser-action'
             }) as BrowserActionElement
             node.id = action.id
             node.className = 'action'
@@ -451,7 +451,7 @@ export const injectBrowserAction = () => {
 
         // Remove any actions no longer in use
         const actionNodes = Array.from(
-          this.shadowRoot?.querySelectorAll('.action') as any,
+          this.shadowRoot?.querySelectorAll('.action') as any
         ) as BrowserActionElement[]
         for (const actionNode of actionNodes) {
           if (!state.actions.some((action: any) => action.id === actionNode.id)) {
@@ -470,7 +470,7 @@ export const injectBrowserAction = () => {
     // Must execute script in main world to modify custom component registry.
     if ('executeInMainWorld' in contextBridge) {
       contextBridge.executeInMainWorld({
-        func: mainWorldScript,
+        func: mainWorldScript
       })
     } else {
       // Deprecated electron@<35

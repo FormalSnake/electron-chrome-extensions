@@ -35,7 +35,7 @@ export class ExtensionStore extends EventEmitter {
 
   getWindowById(windowId: number) {
     return Array.from(this.windows).find(
-      (window) => !window.isDestroyed() && window.id === windowId,
+      (window) => !window.isDestroyed() && window.id === windowId
     )
   }
 
@@ -197,7 +197,7 @@ export class ExtensionStore extends EventEmitter {
 
   async requestPermissions(
     extension: Electron.Extension,
-    permissions: chrome.permissions.Permissions,
+    permissions: chrome.permissions.Permissions
   ) {
     if (typeof this.impl.requestPermissions !== 'function') {
       // Default to allowed.

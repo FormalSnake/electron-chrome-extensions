@@ -10,7 +10,7 @@ const fail = '✗'.red
 
 const args = require('minimist')(process.argv, {
   string: ['target'],
-  unknown: (arg) => unknownFlags.push(arg),
+  unknown: (arg) => unknownFlags.push(arg)
 })
 
 const unknownArgs = []
@@ -64,7 +64,7 @@ async function runMainProcessElectronTests() {
   const { status, signal } = childProcess.spawnSync(exe, runnerArgs, {
     cwd: path.resolve(__dirname, '..'),
     env: process.env,
-    stdio: 'inherit',
+    stdio: 'inherit'
   })
   if (status !== 0) {
     if (status) {

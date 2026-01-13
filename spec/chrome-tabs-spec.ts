@@ -14,7 +14,7 @@ describe('chrome.tabs', () => {
     extensionName: 'rpc',
     assignTabDetails(details, tab) {
       assignTabDetails?.(details, tab)
-    },
+    }
   })
 
   afterEach(() => {
@@ -86,8 +86,8 @@ describe('chrome.tabs', () => {
         webPreferences: {
           session: browser.session,
           nodeIntegration: false,
-          contextIsolation: true,
-        },
+          contextIsolation: true
+        }
       })
 
       browser.extensions.addTab(secondWindow.webContents, secondWindow)
@@ -238,7 +238,7 @@ describe('chrome.tabs', () => {
     it('injects code into a tab', async () => {
       const tabId = browser.window.webContents.id
       const [result] = await browser.crx.exec('tabs.executeScript', tabId, {
-        code: 'location.href',
+        code: 'location.href'
       })
       expect(result).to.equal(browser.window.webContents.getURL())
     })
@@ -258,8 +258,8 @@ describe('chrome.tabs', () => {
         webPreferences: {
           session: browser.session,
           nodeIntegration: false,
-          contextIsolation: true,
-        },
+          contextIsolation: true
+        }
       })
       const secondTab = secondWindow.webContents
 

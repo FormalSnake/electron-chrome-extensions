@@ -45,7 +45,7 @@ function resolvePreloadPath(modulePath?: string) {
   if (modulePath) {
     process.emitWarning(
       'electron-chrome-extensions: "modulePath" is deprecated and will be removed in future versions.',
-      { type: 'DeprecationWarning' },
+      { type: 'DeprecationWarning' }
     )
     return path.join(modulePath, 'dist', preloadFilename)
   }
@@ -110,7 +110,7 @@ export class ElectronChromeExtensions extends EventEmitter {
       const extensions = ElectronChromeExtensions.fromSession(remoteSession)
       if (!extensions) {
         return new Response(`ElectronChromeExtensions not found for "${partition}"`, {
-          status: 404,
+          status: 404
         })
       }
 
@@ -154,7 +154,7 @@ export class ElectronChromeExtensions extends EventEmitter {
       emit: this.emit.bind(this),
       router,
       session,
-      store,
+      store
     }
 
     this.api = {
@@ -167,7 +167,7 @@ export class ElectronChromeExtensions extends EventEmitter {
       runtime: new RuntimeAPI(this.ctx),
       tabs: new TabsAPI(this.ctx),
       webNavigation: new WebNavigationAPI(this.ctx),
-      windows: new WindowsAPI(this.ctx),
+      windows: new WindowsAPI(this.ctx)
     }
 
     this.listenForExtensions()
@@ -190,12 +190,12 @@ export class ElectronChromeExtensions extends EventEmitter {
       session.registerPreloadScript({
         id: 'crx-mv2-preload',
         type: 'frame',
-        filePath: preloadPath,
+        filePath: preloadPath
       })
       session.registerPreloadScript({
         id: 'crx-mv3-preload',
         type: 'service-worker',
-        filePath: preloadPath,
+        filePath: preloadPath
       })
     } else {
       // @ts-expect-error Deprecated electron@<35
@@ -206,8 +206,8 @@ export class ElectronChromeExtensions extends EventEmitter {
       console.error(
         new Error(
           `electron-chrome-extensions: Preload file not found at "${preloadPath}". ` +
-            'See "Packaging the preload script" in the readme.',
-        ),
+            'See "Packaging the preload script" in the readme.'
+        )
       )
     }
   }
@@ -215,7 +215,7 @@ export class ElectronChromeExtensions extends EventEmitter {
   private checkWebContentsArgument(wc: Electron.WebContents) {
     if (this.ctx.session !== wc.session) {
       throw new TypeError(
-        'Invalid WebContents argument. Its session must match the session provided to ElectronChromeExtensions constructor options.',
+        'Invalid WebContents argument. Its session must match the session provided to ElectronChromeExtensions constructor options.'
       )
     }
   }
@@ -297,7 +297,7 @@ export class ElectronChromeExtensions extends EventEmitter {
    */
   handleCRXProtocol(session: Electron.Session) {
     throw new Error(
-      'extensions.handleCRXProtocol(session) is deprecated, call ElectronChromeExtensions.handleCRXProtocol(session) instead.',
+      'extensions.handleCRXProtocol(session) is deprecated, call ElectronChromeExtensions.handleCRXProtocol(session) instead.'
     )
   }
 

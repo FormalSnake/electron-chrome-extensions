@@ -43,23 +43,23 @@ async function getConfigSearchPaths(application: string) {
           'Library',
           'Application Support',
           'Google/Chrome/NativeMessagingHosts',
-          appJson,
+          appJson
         ),
-        path.join(app.getPath('userData'), 'NativeMessagingHosts', appJson),
+        path.join(app.getPath('userData'), 'NativeMessagingHosts', appJson)
       ]
       break
     case 'linux':
       searchPaths = [
         path.join('/etc/opt/chrome/native-messaging-hosts/', appJson),
         path.join(os.homedir(), '.config/google-chrome/NativeMessagingHosts/', appJson),
-        path.join(app.getPath('userData'), 'NativeMessagingHosts', appJson),
+        path.join(app.getPath('userData'), 'NativeMessagingHosts', appJson)
       ]
       break
     case 'win32': {
       searchPaths = (
         await Promise.allSettled([
           readRegistryKey('HKLM', `Software\\Google\\Chrome\\NativeMessagingHosts\\${application}`),
-          readRegistryKey('HKCU', `Software\\Google\\Chrome\\NativeMessagingHosts\\${application}`),
+          readRegistryKey('HKCU', `Software\\Google\\Chrome\\NativeMessagingHosts\\${application}`)
         ])
       )
         .map((result) => (result.status === 'fulfilled' ? result.value : undefined))
@@ -73,7 +73,7 @@ async function getConfigSearchPaths(application: string) {
 }
 
 async function readNativeMessagingHostConfig(
-  application: string,
+  application: string
 ): Promise<NativeConfig | undefined> {
   const searchPaths = await getConfigSearchPaths(application)
   d('searching', searchPaths)
@@ -113,7 +113,7 @@ export class NativeMessagingHost {
     sender: ExtensionSender,
     connectionId: string,
     application: string,
-    keepAlive: boolean = true,
+    keepAlive: boolean = true
   ) {
     this.keepAlive = keepAlive
     this.sender = sender
@@ -167,7 +167,7 @@ export class NativeMessagingHost {
 
     d('launch: spawning %s for %s', config.path, extensionId)
     this.process = spawn(config.path, [extensionUrl], {
-      shell: false,
+      shell: false
     })
 
     this.process.stdout!.on('data', this.receive)

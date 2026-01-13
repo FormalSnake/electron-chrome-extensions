@@ -31,7 +31,7 @@ export function readRegistryKey(hive: string, path: string, key?: string) {
 
       const lines = output.trim().split('\n')
       const resultLine = lines.find((line) =>
-        key ? line.includes(key) : line.includes('(Default)'),
+        key ? line.includes(key) : line.includes('(Default)')
       )
 
       if (resultLine) {

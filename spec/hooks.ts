@@ -31,7 +31,7 @@ export const useServer = () => {
       server.listen(0, '127.0.0.1', () => {
         url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
         resolve()
-      }),
+      })
     )
   })
   after(() => {
@@ -39,7 +39,7 @@ export const useServer = () => {
   })
 
   return {
-    getUrl: () => url,
+    getUrl: () => url
   }
 }
 
@@ -76,7 +76,7 @@ export const useExtensionBrowser = (opts: {
       },
       assignTabDetails(details, tab) {
         opts.assignTabDetails?.(details, tab)
-      },
+      }
     })
 
     extension = await customSession.loadExtension(path.join(fixtures, opts.extensionName))
@@ -84,7 +84,7 @@ export const useExtensionBrowser = (opts: {
 
     w = new BrowserWindow({
       show: false,
-      webPreferences: { session: customSession, nodeIntegration: false, contextIsolation: true },
+      webPreferences: { session: customSession, nodeIntegration: false, contextIsolation: true }
     })
 
     if (opts.openDevTools) {
@@ -144,7 +144,7 @@ export const useExtensionBrowser = (opts: {
       async eventOnce(eventName: string) {
         const p = emittedOnce(ipcMain, 'success')
         await w.webContents.executeJavaScript(
-          `exec('${JSON.stringify({ type: 'event-once', name: eventName })}')`,
+          `exec('${JSON.stringify({ type: 'event-once', name: eventName })}')`
         )
         const [, results] = await p
 
@@ -153,8 +153,8 @@ export const useExtensionBrowser = (opts: {
         }
 
         return results
-      },
-    },
+      }
+    }
   }
 }
 

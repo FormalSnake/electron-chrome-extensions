@@ -21,13 +21,13 @@ export class RuntimeAPI extends EventEmitter {
   private connectNative = async (
     event: ExtensionEvent,
     connectionId: string,
-    application: string,
+    application: string
   ) => {
     const host = new NativeMessagingHost(
       event.extension.id,
       event.sender!,
       connectionId,
-      application,
+      application
     )
     this.hostMap[connectionId] = host
   }
@@ -44,7 +44,7 @@ export class RuntimeAPI extends EventEmitter {
       event.sender!,
       connectionId,
       application,
-      false,
+      false
     )
     await host.ready
     return await host.sendAndReceive(message)

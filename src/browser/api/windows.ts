@@ -70,7 +70,7 @@ export class WindowsAPI {
       type: 'normal', // TODO
       state: getWindowState(win),
       alwaysOnTop: win.isAlwaysOnTop(),
-      sessionId: 'default', // TODO
+      sessionId: 'default' // TODO
     }
 
     this.ctx.store.windowDetailsCache.set(win.id, details)
@@ -116,7 +116,7 @@ export class WindowsAPI {
   private async update(
     event: ExtensionEvent,
     windowId: number,
-    updateProperties: chrome.windows.UpdateInfo = {},
+    updateProperties: chrome.windows.UpdateInfo = {}
   ) {
     const win = this.getWindowFromId(windowId)
     if (!win) return

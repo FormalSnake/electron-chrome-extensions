@@ -39,7 +39,7 @@ export const getExtensionUrl = (extension: Electron.Extension, uri: string) => {
 export const resolveExtensionPath = (
   extension: Electron.Extension,
   uri: string,
-  requestPath?: string,
+  requestPath?: string
 ) => {
   // Resolve any relative paths.
   const relativePath = path.join(requestPath || '/', uri)
@@ -67,13 +67,13 @@ export const validateExtensionResource = async (extension: Electron.Extension, u
 export enum ResizeType {
   Exact,
   Up,
-  Down,
+  Down
 }
 
 export const matchSize = (
   imageSet: { [key: number]: string },
   size: number,
-  match: ResizeType,
+  match: ResizeType
 ): string | undefined => {
   // TODO: match based on size
   const first = parseInt(Object.keys(imageSet).pop()!, 10)
@@ -84,7 +84,7 @@ export const matchSize = (
 export const getIconPath = (
   extension: Electron.Extension,
   iconSize: number = 32,
-  resizeType = ResizeType.Up,
+  resizeType = ResizeType.Up
 ) => {
   const manifest = getExtensionManifest(extension)
   const { icons } = manifest

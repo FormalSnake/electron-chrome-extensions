@@ -63,7 +63,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'stream', privileges: { standard: true, stream: true } },
   { scheme: 'foo', privileges: { standard: true } },
   { scheme: 'bar', privileges: { standard: true } },
-  { scheme: 'crx', privileges: { bypassCSP: true } },
+  { scheme: 'crx', privileges: { bypassCSP: true } }
 ])
 
 const cleanupTestSessions = async () => {
@@ -110,7 +110,7 @@ app
     }
     if (process.env.MOCHA_MULTI_REPORTERS) {
       mochaOptions.reporterOptions = {
-        reporterEnabled: process.env.MOCHA_MULTI_REPORTERS,
+        reporterEnabled: process.env.MOCHA_MULTI_REPORTERS
       }
     }
     const mocha = new Mocha(mochaOptions)

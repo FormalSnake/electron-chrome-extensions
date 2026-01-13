@@ -8,7 +8,7 @@ import {
   getIconPath,
   resolveExtensionPath,
   matchSize,
-  ResizeType,
+  ResizeType
 } from './common'
 import debug from 'debug'
 
@@ -101,7 +101,7 @@ export class BrowserActionAPI {
     const setDetails = (
       { extension }: ExtensionEvent,
       details: any,
-      propName: ExtensionActionKey,
+      propName: ExtensionActionKey
     ) => {
       const { tabId } = details
       let value = details[propName]
@@ -153,7 +153,7 @@ export class BrowserActionAPI {
         // the case of service workers, we need an API to get the script url.
         setDetails(event, { tabId, icon: details }, 'icon')
         setDetails(event, { tabId, iconModified: Date.now() }, 'iconModified')
-      },
+      }
     )
 
     handle('browserAction.openPopup', this.openPopup)
@@ -172,7 +172,7 @@ export class BrowserActionAPI {
           this.observers.delete(observer)
         })
       },
-      preloadOpts,
+      preloadOpts
     )
     handle(
       'browserAction.removeObserver',
@@ -181,7 +181,7 @@ export class BrowserActionAPI {
         const { sender: observer } = event
         this.observers.delete(observer)
       },
-      preloadOpts,
+      preloadOpts
     )
 
     this.ctx.store.on('active-tab-changed', () => {
@@ -264,8 +264,8 @@ export class BrowserActionAPI {
             return new Response(iconImage.toPNG(), {
               status: 200,
               headers: {
-                'Content-Type': 'image/png',
-              },
+                'Content-Type': 'image/png'
+              }
             })
           }
 
@@ -357,7 +357,7 @@ export class BrowserActionAPI {
       return {
         id,
         tabs: tabsInfo,
-        ...rest,
+        ...rest
       }
     })
 
@@ -370,7 +370,7 @@ export class BrowserActionAPI {
     const { eventType, extensionId, tabId } = details
 
     d(
-      `activate [eventType: ${eventType}, extensionId: '${extensionId}', tabId: ${tabId}, senderId: ${sender?.id}]`,
+      `activate [eventType: ${eventType}, extensionId: '${extensionId}', tabId: ${tabId}, senderId: ${sender?.id}]`
     )
 
     switch (eventType) {
@@ -418,7 +418,7 @@ export class BrowserActionAPI {
         parent: win,
         url: popupUrl,
         anchorRect,
-        alignment,
+        alignment
       })
 
       d(`opened popup: ${popupUrl}`)
@@ -452,7 +452,7 @@ export class BrowserActionAPI {
         const homePageUrl =
           manifest.homepage_url || `https://chrome.google.com/webstore/detail/${extension.id}`
         this.ctx.store.createTab({ url: homePageUrl })
-      },
+      }
     })
 
     appendSeparator()
@@ -460,7 +460,7 @@ export class BrowserActionAPI {
     // TODO(mv3): need to build 'action' menu items?
     const contextMenuItems: MenuItem[] = this.ctx.store.buildMenuItems(
       extensionId,
-      'browser_action',
+      'browser_action'
     )
     if (contextMenuItems.length > 0) {
       contextMenuItems.forEach((item) => menu.append(item))
@@ -475,7 +475,7 @@ export class BrowserActionAPI {
       enabled: typeof optionsPageUrl === 'string',
       click: () => {
         this.ctx.store.createTab({ url: optionsPageUrl })
-      },
+      }
     })
 
     if (process.env.NODE_ENV === 'development' && process.env.DEBUG) {
@@ -484,13 +484,13 @@ export class BrowserActionAPI {
         click: () => {
           d(`removing extension "${extension.name}" (${extension.id})`)
           sessionExtensions.removeExtension(extension.id)
-        },
+        }
       })
     }
 
     menu.popup({
       x: Math.floor(anchorRect.x),
-      y: Math.floor(anchorRect.y + anchorRect.height),
+      y: Math.floor(anchorRect.y + anchorRect.height)
     })
   }
 
@@ -515,7 +515,7 @@ export class BrowserActionAPI {
       extensionId: event.extension.id,
       tabId: activeTab?.id,
       // TODO(mv3): get anchor position
-      anchorRect: { x: width - anchorSize, y: 0, width: anchorSize, height: anchorSize },
+      anchorRect: { x: width - anchorSize, y: 0, width: anchorSize, height: anchorSize }
     })
   }
 

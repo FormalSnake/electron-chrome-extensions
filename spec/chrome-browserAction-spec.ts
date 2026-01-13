@@ -15,20 +15,20 @@ describe('chrome.browserAction', () => {
     x: 0,
     y: 0,
     width: 16,
-    height: 16,
+    height: 16
   }
 
   const activateExtension = async (
     partition: string,
     webContents: WebContents,
     extension: Extension,
-    tabId: number = -1,
+    tabId: number = -1
   ) => {
     const details = {
       eventType: 'click',
       extensionId: extension.id,
       tabId,
-      anchorRect: defaultAnchorRect,
+      anchorRect: defaultAnchorRect
     }
 
     const js = `browserAction.activate('${partition}', ${JSON.stringify(details)})`
@@ -38,7 +38,7 @@ describe('chrome.browserAction', () => {
   describe('messaging', () => {
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'chrome-browserAction-click',
+      extensionName: 'chrome-browserAction-click'
     })
 
     it('supports cross-session communication', async () => {
@@ -54,7 +54,7 @@ describe('chrome.browserAction', () => {
       }
 
       const view = new BrowserView({
-        webPreferences: { session: otherSession, nodeIntegration: false, contextIsolation: true },
+        webPreferences: { session: otherSession, nodeIntegration: false, contextIsolation: true }
       })
       await view.webContents.loadURL(server.getUrl())
       browser.window.addBrowserView(view)
@@ -82,7 +82,7 @@ describe('chrome.browserAction', () => {
   describe('onClicked', () => {
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'chrome-browserAction-click',
+      extensionName: 'chrome-browserAction-click'
     })
 
     it('fires listeners when activated', async () => {
@@ -97,7 +97,7 @@ describe('chrome.browserAction', () => {
   describe('popup', () => {
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'chrome-browserAction-popup',
+      extensionName: 'chrome-browserAction-popup'
     })
 
     it('opens when the browser action is clicked', async () => {
@@ -112,8 +112,8 @@ describe('chrome.browserAction', () => {
         webPreferences: {
           session: browser.session,
           nodeIntegration: false,
-          contextIsolation: true,
-        },
+          contextIsolation: true
+        }
       })
       await view.webContents.loadURL(server.getUrl())
       browser.window.addBrowserView(view)
@@ -130,14 +130,14 @@ describe('chrome.browserAction', () => {
   describe('details', () => {
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'rpc',
+      extensionName: 'rpc'
     })
 
     const props = [
       { method: 'BadgeBackgroundColor', detail: 'color', value: '#cacaca' },
       { method: 'BadgeText', detail: 'text' },
       { method: 'Popup', detail: 'popup' },
-      { method: 'Title', detail: 'title' },
+      { method: 'Title', detail: 'title' }
     ]
 
     for (const { method, detail, value } of props) {
@@ -167,7 +167,7 @@ describe('chrome.browserAction', () => {
       const [popup] = await popupPromise
       await popup.whenReady()
       expect(popup.browserWindow.webContents.getURL()).to.equal(
-        `chrome-extension://${browser.extension.id}/${popupPath}`,
+        `chrome-extension://${browser.extension.id}/${popupPath}`
       )
     })
   })
@@ -176,11 +176,11 @@ describe('chrome.browserAction', () => {
     const basePath = path.join(__dirname, 'fixtures/browser-action-list')
 
     const browser = useExtensionBrowser({
-      extensionName: 'chrome-browserAction-popup',
+      extensionName: 'chrome-browserAction-popup'
     })
 
     const getExtensionActionIds = async (
-      webContents: Electron.WebContents = browser.webContents,
+      webContents: Electron.WebContents = browser.webContents
     ) => {
       // Await update propagation to avoid flaky tests
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -191,7 +191,7 @@ describe('chrome.browserAction', () => {
           const actions = list.shadowRoot!.querySelectorAll('.action')
           const ids = Array.from(actions).map((elem) => elem.id)
           return ids
-        }})();`,
+        }})();`
       )
     }
 
@@ -213,7 +213,7 @@ describe('chrome.browserAction', () => {
           const list = document.createElement('browser-action-list')
           list.setAttribute('partition', partition)
           document.body.appendChild(list)
-        }})('${browser.partition}');`,
+        }})('${browser.partition}');`
       )
 
       const extensionIds = await getExtensionActionIds(remoteTab)
@@ -234,7 +234,7 @@ describe('chrome.browserAction', () => {
   describe('crx:// protocol', () => {
     const browser = useExtensionBrowser({
       url: server.getUrl,
-      extensionName: 'chrome-browserAction-popup',
+      extensionName: 'chrome-browserAction-popup'
     })
 
     it('supports same-session requests', async () => {
@@ -248,7 +248,7 @@ describe('chrome.browserAction', () => {
           const img = document.createElement('img')
           const params = new URLSearchParams({
             tabId: `${tabId}`,
-            t: `${Date.now()}`,
+            t: `${Date.now()}`
           })
           const src = `crx://extension-icon/${extensionId}/32/2?${params.toString()}`
           return new Promise((resolve, reject) => {
@@ -260,7 +260,7 @@ describe('chrome.browserAction', () => {
           })
         }})(${[browser.extension.id, browser.webContents.id]
           .map((v) => JSON.stringify(v))
-          .join(', ')});`,
+          .join(', ')});`
       )
 
       expect(result).to.equal('success')
@@ -276,7 +276,7 @@ describe('chrome.browserAction', () => {
       })
 
       const view = new WebContentsView({
-        webPreferences: { session: otherSession, nodeIntegration: false, contextIsolation: true },
+        webPreferences: { session: otherSession, nodeIntegration: false, contextIsolation: true }
       })
       browser.window.contentView.addChildView(view)
       await view.webContents.loadURL(server.getUrl())
@@ -287,7 +287,7 @@ describe('chrome.browserAction', () => {
           const params = new URLSearchParams({
             tabId: `${tabId}`,
             partition,
-            t: `${Date.now()}`,
+            t: `${Date.now()}`
           })
           const src = `crx://extension-icon/${extensionId}/32/2?${params.toString()}`
           return new Promise((resolve, reject) => {
@@ -299,7 +299,7 @@ describe('chrome.browserAction', () => {
           })
         }})(${[browser.extension.id, browser.webContents.id, extensionsPartition]
           .map((v) => JSON.stringify(v))
-          .join(', ')});`,
+          .join(', ')});`
       )
 
       expect(result).to.equal('success')

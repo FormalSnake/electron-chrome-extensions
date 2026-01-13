@@ -8,7 +8,7 @@ export const createCrxSession = () => {
   return {
     partitionName,
     partition,
-    session: session.fromPartition(partition),
+    session: session.fromPartition(partition)
   }
 }
 
@@ -18,7 +18,7 @@ export const addCrxPreload = (session: Electron.Session) => {
     session.registerPreloadScript({
       id: 'crx-test-preload',
       type: 'frame',
-      filePath: preloadPath,
+      filePath: preloadPath
     })
   } else {
     // @ts-expect-error Deprecated electron@<35
@@ -35,8 +35,8 @@ export const createCrxRemoteWindow = () => {
     webPreferences: {
       session: sessionDetails.session,
       nodeIntegration: false,
-      contextIsolation: true,
-    },
+      contextIsolation: true
+    }
   })
 
   return win
@@ -47,7 +47,7 @@ const isBackgroundHostSupported = (extension: Electron.Extension) =>
 
 export const waitForBackgroundPage = async (
   extension: Electron.Extension,
-  session: Electron.Session,
+  session: Electron.Session
 ) => {
   if (!isBackgroundHostSupported(extension)) return
 
@@ -84,7 +84,7 @@ export const waitForBackgroundPage = async (
 
 export async function waitForBackgroundScriptEvaluated(
   extension: Electron.Extension,
-  session: Electron.Session,
+  session: Electron.Session
 ) {
   if (!isBackgroundHostSupported(extension)) return
 

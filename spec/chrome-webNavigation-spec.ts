@@ -13,7 +13,7 @@ describe('chrome.webNavigation', () => {
       'onBeforeNavigate',
       'onCommitted',
       'onDOMContentLoaded',
-      'onCompleted',
+      'onCompleted'
     ]
 
     const eventsPromise = new Promise((resolve) => {
