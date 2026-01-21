@@ -201,8 +201,12 @@ export class TabsAPI {
         if (isSet(info.discarded) && info.discarded !== tab.discarded) return false
         if (isSet(info.autoDiscardable) && info.autoDiscardable !== tab.autoDiscardable)
           return false
-        // if (isSet(info.currentWindow)) return false
-        // if (isSet(info.lastFocusedWindow)) return false
+        if (isSet(info.currentWindow) && info.currentWindow) {
+          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+        }
+        if (isSet(info.lastFocusedWindow) && info.lastFocusedWindow) {
+          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+        }
         if (isSet(info.frozen) && info.frozen !== tab.frozen) return false
         if (isSet(info.groupId) && info.groupId !== tab.groupId) return false
         if (isSet(info.status) && info.status !== tab.status) return false
