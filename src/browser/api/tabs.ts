@@ -143,7 +143,7 @@ export class TabsAPI {
   private get(event: ExtensionEvent, tabId: number) {
     const tab = this.ctx.store.getTabById(tabId)
     if (!tab) return { id: TabsAPI.TAB_ID_NONE }
-    return this.getTabDetails(tab)
+    return this.createTabDetails(tab)
   }
 
   private getAllInWindow(event: ExtensionEvent, windowId: number = TabsAPI.WINDOW_ID_CURRENT) {
@@ -158,12 +158,12 @@ export class TabsAPI {
       return browserWindow.id === windowId
     })
 
-    return tabs.map(this.getTabDetails.bind(this))
+    return tabs.map(this.createTabDetails.bind(this))
   }
 
   private getCurrent(event: ExtensionEvent) {
     const tab = this.ctx.store.getActiveTabOfCurrentWindow()
-    return tab ? this.getTabDetails(tab) : undefined
+    return tab ? this.createTabDetails(tab) : undefined
   }
 
   private async create(event: ExtensionEvent, details: chrome.tabs.CreateProperties = {}) {
@@ -190,7 +190,7 @@ export class TabsAPI {
     const isSet = (value: any) => typeof value !== 'undefined'
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
-      .map(this.getTabDetails.bind(this))
+      .map(this.createTabDetails.bind(this))
       .filter((tab) => {
         if (!tab) return false
         if (isSet(info.active) && info.active !== tab.active) return false

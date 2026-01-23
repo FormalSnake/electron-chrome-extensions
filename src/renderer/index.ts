@@ -59,9 +59,11 @@ export const injectExtensionAPIs = () => {
     disconnect: () => void,
     callback: ConnectNativeCallback
   ) => {
-    const connectionId = (contextBridge as any).executeInMainWorld({
-      func: () => crypto.randomUUID()
-    })
+    const connectionId = process.type === 'service-worker'
+      ? crypto.randomUUID()
+      : (contextBridge as any).executeInMainWorld({
+          func: () => crypto.randomUUID()
+        })
     invokeExtension(extensionId, 'runtime.connectNative', {}, connectionId, application)
     const onMessage = (_event: Electron.IpcRendererEvent, message: any) => {
       receive(message)
@@ -664,6 +666,12 @@ export const injectExtensionAPIs = () => {
     Object.freeze(chrome)
 
     void 0 // no return
+  }
+
+  // Service workers don't have separate worlds - inject directly
+  if (process.type === 'service-worker') {
+    mainWorldScript()
+    return
   }
 
   if (!process.contextIsolated) {
