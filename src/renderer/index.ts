@@ -674,19 +674,27 @@ export const injectExtensionAPIs = () => {
     void 0 // no return
   }
 
+  console.log('[crx-inject] process.type:', process.type, 'contextIsolated:', process.contextIsolated)
+  console.log('[crx-inject] contextBridge available:', !!contextBridge, 'webFrame available:', !!webFrame)
+  console.log('[crx-inject] globalThis.chrome exists:', !!(globalThis as any).chrome)
+  console.log('[crx-inject] chrome.runtime?.id:', (globalThis as any).chrome?.runtime?.id)
+
   // Service workers don't have separate worlds - inject directly.
   // Skip freeze so Electron can add native APIs after preload.
   if (process.type === 'service-worker') {
+    console.log('[crx-inject] Taking service-worker path')
     ;(globalThis as any).__crx_skip_freeze = true
     mainWorldScript()
     return
   }
 
   if (!process.contextIsolated) {
-    console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`)
+    console.log('[crx-inject] Taking non-isolated path')
     mainWorldScript()
     return
   }
+
+  console.log('[crx-inject] Taking contextBridge path')
 
   try {
     // Expose extension IPC to main world

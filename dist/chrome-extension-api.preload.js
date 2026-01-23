@@ -576,17 +576,22 @@
       }
       delete globalThis.__crx_skip_freeze;
     }
+    console.log("[crx-inject] process.type:", process.type, "contextIsolated:", process.contextIsolated);
+    console.log("[crx-inject] contextBridge available:", !!import_electron2.contextBridge, "webFrame available:", !!import_electron2.webFrame);
+    console.log("[crx-inject] globalThis.chrome exists:", !!globalThis.chrome);
+    console.log("[crx-inject] chrome.runtime?.id:", globalThis.chrome?.runtime?.id);
     if (process.type === "service-worker") {
-      ;
+      console.log("[crx-inject] Taking service-worker path");
       globalThis.__crx_skip_freeze = true;
       mainWorldScript();
       return;
     }
     if (!process.contextIsolated) {
-      console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);
+      console.log("[crx-inject] Taking non-isolated path");
       mainWorldScript();
       return;
     }
+    console.log("[crx-inject] Taking contextBridge path");
     try {
       import_electron2.contextBridge.exposeInMainWorld("electron", electronContext);
       if ("executeInMainWorld" in import_electron2.contextBridge) {
@@ -604,7 +609,11 @@
   };
 
   // src/preload.ts
-  if (process.type === "service-worker" || location.href.startsWith("chrome-extension://")) {
+  console.log("[crx-preload] process.type:", process.type, "contextIsolated:", process.contextIsolated);
+  if (process.type === "service-worker" || typeof location !== "undefined" && location.href.startsWith("chrome-extension://")) {
+    console.log("[crx-preload] Injecting extension APIs");
     injectExtensionAPIs();
+  } else {
+    console.log("[crx-preload] Skipped injection. location:", typeof location !== "undefined" ? location.href : "undefined");
   }
 })();
