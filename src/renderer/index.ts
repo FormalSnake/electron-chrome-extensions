@@ -98,6 +98,9 @@ export const injectExtensionAPIs = () => {
     const electron = ((globalThis as any).electron as typeof electronContext) || electronContext
 
     const chrome = globalThis.chrome || {}
+    if (!(globalThis as any).chrome) {
+      ;(globalThis as any).chrome = chrome
+    }
     const extensionId = chrome.runtime?.id
 
     // NOTE: This uses a synchronous IPC to get the extension manifest.
@@ -663,13 +666,18 @@ export const injectExtensionAPIs = () => {
     // Remove access to internals
     delete (globalThis as any).electron
 
-    Object.freeze(chrome)
+    if (!(globalThis as any).__crx_skip_freeze) {
+      Object.freeze(chrome)
+    }
+    delete (globalThis as any).__crx_skip_freeze
 
     void 0 // no return
   }
 
-  // Service workers don't have separate worlds - inject directly
+  // Service workers don't have separate worlds - inject directly.
+  // Skip freeze so Electron can add native APIs after preload.
   if (process.type === 'service-worker') {
+    ;(globalThis as any).__crx_skip_freeze = true
     mainWorldScript()
     return
   }

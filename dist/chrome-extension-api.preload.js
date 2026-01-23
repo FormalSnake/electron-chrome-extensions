@@ -102,6 +102,10 @@
     function mainWorldScript() {
       const electron = globalThis.electron || electronContext;
       const chrome = globalThis.chrome || {};
+      if (!globalThis.chrome) {
+        ;
+        globalThis.chrome = chrome;
+      }
       const extensionId = chrome.runtime?.id;
       const manifest = extensionId && chrome.runtime.getManifest?.() || {};
       const invokeExtension2 = (fnName, opts = {}) => (...args) => electron.invokeExtension(extensionId, fnName, opts, ...args);
@@ -567,9 +571,14 @@
         });
       });
       delete globalThis.electron;
-      Object.freeze(chrome);
+      if (!globalThis.__crx_skip_freeze) {
+        Object.freeze(chrome);
+      }
+      delete globalThis.__crx_skip_freeze;
     }
     if (process.type === "service-worker") {
+      ;
+      globalThis.__crx_skip_freeze = true;
       mainWorldScript();
       return;
     }
