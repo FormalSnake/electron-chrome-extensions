@@ -72,7 +72,7 @@
       }
     };
     const connectNative = (extensionId, application, receive, disconnect, callback) => {
-      const connectionId = import_electron2.contextBridge.executeInMainWorld({
+      const connectionId = process.type === "service-worker" ? crypto.randomUUID() : import_electron2.contextBridge.executeInMainWorld({
         func: () => crypto.randomUUID()
       });
       invokeExtension(extensionId, "runtime.connectNative", {}, connectionId, application);
@@ -568,6 +568,10 @@
       });
       delete globalThis.electron;
       Object.freeze(chrome);
+    }
+    if (process.type === "service-worker") {
+      mainWorldScript();
+      return;
     }
     if (!process.contextIsolated) {
       console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);

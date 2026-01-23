@@ -961,7 +961,7 @@ var _TabsAPI = class _TabsAPI {
   get(event, tabId) {
     const tab = this.ctx.store.getTabById(tabId);
     if (!tab) return { id: _TabsAPI.TAB_ID_NONE };
-    return this.getTabDetails(tab);
+    return this.createTabDetails(tab);
   }
   getAllInWindow(event, windowId = _TabsAPI.WINDOW_ID_CURRENT) {
     if (windowId === _TabsAPI.WINDOW_ID_CURRENT) windowId = this.ctx.store.lastFocusedWindowId;
@@ -971,11 +971,11 @@ var _TabsAPI = class _TabsAPI {
       if (!browserWindow || browserWindow.isDestroyed()) return;
       return browserWindow.id === windowId;
     });
-    return tabs.map(this.getTabDetails.bind(this));
+    return tabs.map(this.createTabDetails.bind(this));
   }
   getCurrent(event) {
     const tab = this.ctx.store.getActiveTabOfCurrentWindow();
-    return tab ? this.getTabDetails(tab) : void 0;
+    return tab ? this.createTabDetails(tab) : void 0;
   }
   async create(event, details = {}) {
     const url = details.url ? validateExtensionUrl(details.url, event.extension) : void 0;
@@ -995,7 +995,7 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    const filteredTabs = Array.from(this.ctx.store.tabs).map(this.getTabDetails.bind(this)).filter((tab) => {
+    const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
       if (isSet(info.pinned) && info.pinned !== tab.pinned) return false;
