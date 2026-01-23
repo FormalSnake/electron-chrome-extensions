@@ -665,17 +665,37 @@ export const injectExtensionAPIs = () => {
     delete (globalThis as any).electron
 
     if ((globalThis as any).__crx_skip_freeze) {
-      // Service worker context: Electron replaces the chrome object after preload
-      // via V8 internals. Lock our augmented chrome as non-configurable to prevent
-      // replacement. The initial chrome object already has Electron's native APIs.
       delete (globalThis as any).__crx_skip_freeze
 
-      Object.defineProperty(globalThis, 'chrome', {
-        value: chrome,
-        writable: false,
-        configurable: false,
-        enumerable: true
+      // Service worker context: Electron replaces the chrome object after
+      // executeInMainWorld via V8 internals. Store our APIs in a separate global
+      // and re-apply them after a microtask/timeout when chrome is final.
+      const savedAPIs: Record<string, any> = {}
+      Object.keys(apiDefinitions).forEach((key: any) => {
+        const api = apiDefinitions[key as keyof typeof apiDefinitions]
+        if (api?.shouldInject && !api.shouldInject()) return
+        if ((chrome as any)[key]) {
+          savedAPIs[key] = (chrome as any)[key]
+        }
       })
+
+      const applyAPIs = () => {
+        const currentChrome = (globalThis as any).chrome
+        if (!currentChrome) { setTimeout(applyAPIs, 0); return }
+        for (const [key, value] of Object.entries(savedAPIs)) {
+          if (!currentChrome[key]) {
+            Object.defineProperty(currentChrome, key, {
+              value,
+              enumerable: true,
+              configurable: true
+            })
+          }
+        }
+      }
+
+      // Try multiple timing strategies
+      queueMicrotask(applyAPIs)
+      setTimeout(applyAPIs, 0)
     } else {
       Object.freeze(chrome)
     }

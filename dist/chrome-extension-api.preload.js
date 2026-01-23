@@ -573,12 +573,32 @@
       delete globalThis.electron;
       if (globalThis.__crx_skip_freeze) {
         delete globalThis.__crx_skip_freeze;
-        Object.defineProperty(globalThis, "chrome", {
-          value: chrome,
-          writable: false,
-          configurable: false,
-          enumerable: true
+        const savedAPIs = {};
+        Object.keys(apiDefinitions).forEach((key) => {
+          const api = apiDefinitions[key];
+          if (api?.shouldInject && !api.shouldInject()) return;
+          if (chrome[key]) {
+            savedAPIs[key] = chrome[key];
+          }
         });
+        const applyAPIs = () => {
+          const currentChrome = globalThis.chrome;
+          if (!currentChrome) {
+            setTimeout(applyAPIs, 0);
+            return;
+          }
+          for (const [key, value] of Object.entries(savedAPIs)) {
+            if (!currentChrome[key]) {
+              Object.defineProperty(currentChrome, key, {
+                value,
+                enumerable: true,
+                configurable: true
+              });
+            }
+          }
+        };
+        queueMicrotask(applyAPIs);
+        setTimeout(applyAPIs, 0);
       } else {
         Object.freeze(chrome);
       }
