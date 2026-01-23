@@ -59,11 +59,9 @@ export const injectExtensionAPIs = () => {
     disconnect: () => void,
     callback: ConnectNativeCallback
   ) => {
-    const connectionId = process.type === 'service-worker'
-      ? crypto.randomUUID()
-      : (contextBridge as any).executeInMainWorld({
-          func: () => crypto.randomUUID()
-        })
+    const connectionId = (contextBridge as any).executeInMainWorld({
+      func: () => crypto.randomUUID()
+    })
     invokeExtension(extensionId, 'runtime.connectNative', {}, connectionId, application)
     const onMessage = (_event: Electron.IpcRendererEvent, message: any) => {
       receive(message)
@@ -674,27 +672,11 @@ export const injectExtensionAPIs = () => {
     void 0 // no return
   }
 
-  console.log('[crx-inject] process.type:', process.type, 'contextIsolated:', process.contextIsolated)
-  console.log('[crx-inject] contextBridge available:', !!contextBridge, 'webFrame available:', !!webFrame)
-  console.log('[crx-inject] globalThis.chrome exists:', !!(globalThis as any).chrome)
-  console.log('[crx-inject] chrome.runtime?.id:', (globalThis as any).chrome?.runtime?.id)
-
-  // Service workers don't have separate worlds - inject directly.
-  // Skip freeze so Electron can add native APIs after preload.
-  if (process.type === 'service-worker') {
-    console.log('[crx-inject] Taking service-worker path')
-    ;(globalThis as any).__crx_skip_freeze = true
-    mainWorldScript()
-    return
-  }
-
   if (!process.contextIsolated) {
-    console.log('[crx-inject] Taking non-isolated path')
+    console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`)
     mainWorldScript()
     return
   }
-
-  console.log('[crx-inject] Taking contextBridge path')
 
   try {
     // Expose extension IPC to main world
@@ -702,15 +684,20 @@ export const injectExtensionAPIs = () => {
 
     // Mutate global 'chrome' object with additional APIs in the main world.
     if ('executeInMainWorld' in contextBridge) {
+      // For service workers, skip freezing chrome so Electron can add native APIs after preload
+      if (process.type === 'service-worker') {
+        ;(contextBridge as any).executeInMainWorld({
+          func: () => { (globalThis as any).__crx_skip_freeze = true }
+        })
+      }
       ;(contextBridge as any).executeInMainWorld({
         func: mainWorldScript
       })
-    } else {
-      // TODO(mv3): remove webFrame usage
+    } else if (webFrame) {
       webFrame.executeJavaScript(`(${mainWorldScript}());`)
     }
   } catch (error) {
-    console.error(`injectExtensionAPIs error (${location.href})`)
+    console.error(`injectExtensionAPIs error (${process.type === 'service-worker' ? 'service-worker' : location.href})`)
     console.error(error)
   }
 }
