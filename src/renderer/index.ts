@@ -665,37 +665,15 @@ export const injectExtensionAPIs = () => {
     delete (globalThis as any).electron
 
     if ((globalThis as any).__crx_skip_freeze) {
-      // Service worker context: Electron may replace the chrome object after preload.
-      // Install a setter trap to re-apply our augmentations if chrome is replaced.
+      // Service worker context: Electron replaces the chrome object after preload
+      // via V8 internals. Lock our augmented chrome as non-configurable to prevent
+      // replacement. The initial chrome object already has Electron's native APIs.
       delete (globalThis as any).__crx_skip_freeze
 
-      const augmentedAPIs: Record<string, any> = {}
-      Object.keys(apiDefinitions).forEach((key: any) => {
-        const api = apiDefinitions[key as keyof typeof apiDefinitions]
-        if (api?.shouldInject && !api.shouldInject()) return
-        if ((chrome as any)[key]) {
-          augmentedAPIs[key] = (chrome as any)[key]
-        }
-      })
-
-      let currentChrome = chrome
       Object.defineProperty(globalThis, 'chrome', {
-        get() { return currentChrome },
-        set(newValue) {
-          if (newValue && typeof newValue === 'object') {
-            for (const key of Object.keys(augmentedAPIs)) {
-              if (!(key in newValue)) {
-                Object.defineProperty(newValue, key, {
-                  value: augmentedAPIs[key],
-                  enumerable: true,
-                  configurable: true
-                })
-              }
-            }
-            currentChrome = newValue
-          }
-        },
-        configurable: true,
+        value: chrome,
+        writable: false,
+        configurable: false,
         enumerable: true
       })
     } else {

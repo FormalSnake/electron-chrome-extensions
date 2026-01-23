@@ -573,34 +573,10 @@
       delete globalThis.electron;
       if (globalThis.__crx_skip_freeze) {
         delete globalThis.__crx_skip_freeze;
-        const augmentedAPIs = {};
-        Object.keys(apiDefinitions).forEach((key) => {
-          const api = apiDefinitions[key];
-          if (api?.shouldInject && !api.shouldInject()) return;
-          if (chrome[key]) {
-            augmentedAPIs[key] = chrome[key];
-          }
-        });
-        let currentChrome = chrome;
         Object.defineProperty(globalThis, "chrome", {
-          get() {
-            return currentChrome;
-          },
-          set(newValue) {
-            if (newValue && typeof newValue === "object") {
-              for (const key of Object.keys(augmentedAPIs)) {
-                if (!(key in newValue)) {
-                  Object.defineProperty(newValue, key, {
-                    value: augmentedAPIs[key],
-                    enumerable: true,
-                    configurable: true
-                  });
-                }
-              }
-              currentChrome = newValue;
-            }
-          },
-          configurable: true,
+          value: chrome,
+          writable: false,
+          configurable: false,
           enumerable: true
         });
       } else {
