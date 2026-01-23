@@ -95,11 +95,6 @@ export const injectExtensionAPIs = () => {
     // Use context bridge API or closure variable when context isolation is disabled.
     const electron = ((globalThis as any).electron as typeof electronContext) || electronContext
 
-    console.log('[crx-mainworld] electron available:', !!electron)
-    console.log('[crx-mainworld] globalThis.chrome:', !!(globalThis as any).chrome)
-    console.log('[crx-mainworld] chrome.runtime:', !!(globalThis as any).chrome?.runtime)
-    console.log('[crx-mainworld] chrome.runtime.id:', (globalThis as any).chrome?.runtime?.id)
-
     const chrome = globalThis.chrome || {}
     if (!(globalThis as any).chrome) {
       ;(globalThis as any).chrome = chrome
@@ -666,15 +661,46 @@ export const injectExtensionAPIs = () => {
       })
     })
 
-    console.log('[crx-mainworld] APIs initialized. commands:', !!(chrome as any).commands, 'tabs:', !!(chrome as any).tabs)
-
     // Remove access to internals
     delete (globalThis as any).electron
 
-    if (!(globalThis as any).__crx_skip_freeze) {
+    if ((globalThis as any).__crx_skip_freeze) {
+      // Service worker context: Electron may replace the chrome object after preload.
+      // Install a setter trap to re-apply our augmentations if chrome is replaced.
+      delete (globalThis as any).__crx_skip_freeze
+
+      const augmentedAPIs: Record<string, any> = {}
+      Object.keys(apiDefinitions).forEach((key: any) => {
+        const api = apiDefinitions[key as keyof typeof apiDefinitions]
+        if (api?.shouldInject && !api.shouldInject()) return
+        if ((chrome as any)[key]) {
+          augmentedAPIs[key] = (chrome as any)[key]
+        }
+      })
+
+      let currentChrome = chrome
+      Object.defineProperty(globalThis, 'chrome', {
+        get() { return currentChrome },
+        set(newValue) {
+          if (newValue && typeof newValue === 'object') {
+            for (const key of Object.keys(augmentedAPIs)) {
+              if (!(key in newValue)) {
+                Object.defineProperty(newValue, key, {
+                  value: augmentedAPIs[key],
+                  enumerable: true,
+                  configurable: true
+                })
+              }
+            }
+            currentChrome = newValue
+          }
+        },
+        configurable: true,
+        enumerable: true
+      })
+    } else {
       Object.freeze(chrome)
     }
-    delete (globalThis as any).__crx_skip_freeze
 
     void 0 // no return
   }
@@ -685,17 +711,13 @@ export const injectExtensionAPIs = () => {
     return
   }
 
-  console.log('[crx-inject] Taking contextBridge path, process.type:', process.type, 'contextIsolated:', process.contextIsolated)
-
   try {
     // Expose extension IPC to main world
     contextBridge.exposeInMainWorld('electron', electronContext)
-    console.log('[crx-inject] exposeInMainWorld succeeded')
 
     // Mutate global 'chrome' object with additional APIs in the main world.
     if ('executeInMainWorld' in contextBridge) {
-      console.log('[crx-inject] executeInMainWorld available, calling it...')
-      // For service workers, skip freezing chrome so Electron can add native APIs after preload
+      // For service workers, skip freezing and install a setter trap instead
       if (process.type === 'service-worker') {
         ;(contextBridge as any).executeInMainWorld({
           func: () => { (globalThis as any).__crx_skip_freeze = true }
@@ -704,7 +726,6 @@ export const injectExtensionAPIs = () => {
       ;(contextBridge as any).executeInMainWorld({
         func: mainWorldScript
       })
-      console.log('[crx-inject] executeInMainWorld completed')
     } else if (webFrame) {
       webFrame.executeJavaScript(`(${mainWorldScript}());`)
     }
