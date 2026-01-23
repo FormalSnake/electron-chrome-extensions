@@ -101,6 +101,10 @@
     };
     function mainWorldScript() {
       const electron = globalThis.electron || electronContext;
+      console.log("[crx-mainworld] electron available:", !!electron);
+      console.log("[crx-mainworld] globalThis.chrome:", !!globalThis.chrome);
+      console.log("[crx-mainworld] chrome.runtime:", !!globalThis.chrome?.runtime);
+      console.log("[crx-mainworld] chrome.runtime.id:", globalThis.chrome?.runtime?.id);
       const chrome = globalThis.chrome || {};
       if (!globalThis.chrome) {
         ;
@@ -570,6 +574,7 @@
           configurable: true
         });
       });
+      console.log("[crx-mainworld] APIs initialized. commands:", !!chrome.commands, "tabs:", !!chrome.tabs);
       delete globalThis.electron;
       if (!globalThis.__crx_skip_freeze) {
         Object.freeze(chrome);
@@ -581,9 +586,12 @@
       mainWorldScript();
       return;
     }
+    console.log("[crx-inject] Taking contextBridge path, process.type:", process.type, "contextIsolated:", process.contextIsolated);
     try {
       import_electron2.contextBridge.exposeInMainWorld("electron", electronContext);
+      console.log("[crx-inject] exposeInMainWorld succeeded");
       if ("executeInMainWorld" in import_electron2.contextBridge) {
+        console.log("[crx-inject] executeInMainWorld available, calling it...");
         if (process.type === "service-worker") {
           ;
           import_electron2.contextBridge.executeInMainWorld({
@@ -596,6 +604,7 @@
         import_electron2.contextBridge.executeInMainWorld({
           func: mainWorldScript
         });
+        console.log("[crx-inject] executeInMainWorld completed");
       } else if (import_electron2.webFrame) {
         import_electron2.webFrame.executeJavaScript(`(${mainWorldScript}());`);
       }
