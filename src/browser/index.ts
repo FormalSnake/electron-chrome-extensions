@@ -211,18 +211,24 @@ export class ElectronChromeExtensions extends EventEmitter {
    */
   private async injectSWPolyfill(extension: Electron.Extension, swScriptPath: string) {
     const filePath = path.join(extension.path, swScriptPath)
-    const polyfillMarker = '__crxSWPolyfill'
+    const polyfillStartMarker = ';(function __crxSWPolyfill()'
+    const polyfillEndMarker = '})();\n'
 
     try {
-      const content = readFileSync(filePath, 'utf-8')
+      let content = readFileSync(filePath, 'utf-8')
 
-      // Check if polyfill is already injected (avoid duplicate injection)
-      if (content.includes(polyfillMarker)) {
-        console.log(`[electron-chrome-extensions] Polyfill already present in ${extension.name}`)
-        return
+      // Strip old polyfill if present (to allow updates)
+      const startIdx = content.indexOf(polyfillStartMarker)
+      if (startIdx !== -1) {
+        // Find the end of the old polyfill IIFE
+        const endIdx = content.indexOf(polyfillEndMarker, startIdx)
+        if (endIdx !== -1) {
+          content = content.substring(endIdx + polyfillEndMarker.length)
+          console.log(`[electron-chrome-extensions] Stripped old polyfill from ${extension.name}`)
+        }
       }
 
-      // Prepend polyfill to the script
+      // Prepend new polyfill to the script
       const modifiedContent = this.swPolyfill + '\n' + content
       const { writeFileSync } = await import('node:fs')
       writeFileSync(filePath, modifiedContent, 'utf-8')

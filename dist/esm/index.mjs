@@ -80,13 +80,35 @@ function generateSWPolyfill() {
   // Only augment APIs that Electron doesn't provide natively.
   // Check existence before overriding to preserve native implementations.
 
+  // Helper to safely define chrome.* properties
+  function safeDefine(obj, prop, value) {
+    try {
+      if (Object.getOwnPropertyDescriptor(obj, prop)?.configurable === false) {
+        // Property is non-configurable, try to extend instead
+        Object.assign(obj[prop], value);
+      } else {
+        Object.defineProperty(obj, prop, {
+          value: value,
+          enumerable: true,
+          configurable: true,
+          writable: true
+        });
+      }
+    } catch (e) {
+      console.warn('[electron-chrome-extensions] Failed to define', prop, e);
+      // Last resort: direct assignment
+      try { obj[prop] = value; } catch (e2) { /* ignore */ }
+    }
+  }
+
   // chrome.commands
   if (!chrome.commands || !chrome.commands.onCommand) {
     var commandsBase = chrome.commands || {};
-    chrome.commands = {
+    var commandsApi = {
       getAll: commandsBase.getAll || invokeExtension('commands.getAll'),
       onCommand: new ExtensionEvent('commands.onCommand')
     };
+    safeDefine(chrome, 'commands', commandsApi);
   }
 
   // chrome.contextMenus
@@ -310,8 +332,10 @@ function generateSWPolyfill() {
     });
   }
 
-  // Remove access to internals
-  delete globalThis.electron;
+  // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
+  // The electron bridge remains available but this is acceptable for trusted extension code
+
+  console.log('[electron-chrome-extensions] SW polyfill setup complete, chrome.commands:', !!chrome.commands, 'onCommand:', !!(chrome.commands && chrome.commands.onCommand));
 
 })();
 `;
@@ -3091,12 +3115,17 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends EventEmit
    */
   async injectSWPolyfill(extension, swScriptPath) {
     const filePath = path4.join(extension.path, swScriptPath);
-    const polyfillMarker = "__crxSWPolyfill";
+    const polyfillStartMarker = ";(function __crxSWPolyfill()";
+    const polyfillEndMarker = "})();\n";
     try {
-      const content = readFileSync2(filePath, "utf-8");
-      if (content.includes(polyfillMarker)) {
-        console.log(`[electron-chrome-extensions] Polyfill already present in ${extension.name}`);
-        return;
+      let content = readFileSync2(filePath, "utf-8");
+      const startIdx = content.indexOf(polyfillStartMarker);
+      if (startIdx !== -1) {
+        const endIdx = content.indexOf(polyfillEndMarker, startIdx);
+        if (endIdx !== -1) {
+          content = content.substring(endIdx + polyfillEndMarker.length);
+          console.log(`[electron-chrome-extensions] Stripped old polyfill from ${extension.name}`);
+        }
       }
       const modifiedContent = this.swPolyfill + "\n" + content;
       const { writeFileSync } = await import("node:fs");
