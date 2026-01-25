@@ -1362,9 +1362,9 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    d4("tabs.query called with:", info, "lastFocusedWindowId:", this.ctx.store.lastFocusedWindowId, "total tabs:", this.ctx.store.tabs.size);
+    console.log("[tabs.query] called with:", JSON.stringify(info), "lastFocusedWindowId:", this.ctx.store.lastFocusedWindowId, "total tabs:", this.ctx.store.tabs.size);
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
-      d4("  checking tab:", tab?.id, "url:", tab?.url, "active:", tab?.active, "windowId:", tab?.windowId);
+      console.log("[tabs.query]   tab:", tab?.id, "url:", tab?.url?.substring(0, 50), "active:", tab?.active, "windowId:", tab?.windowId);
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
       if (isSet(info.pinned) && info.pinned !== tab.pinned) return false;
@@ -1407,7 +1407,7 @@ var _TabsAPI = class _TabsAPI {
       }
       return tab;
     });
-    d4("tabs.query result:", filteredTabs.length, "tabs, first:", filteredTabs[0]?.url);
+    console.log("[tabs.query] result:", filteredTabs.length, "tabs, first url:", filteredTabs[0]?.url);
     return filteredTabs;
   }
   reload(event, arg1, arg2) {
