@@ -454,11 +454,38 @@
         storage: {
           factory: (base) => {
             const local = base && base.local;
+            const fallbackStorage = {
+              get: (keys, callback) => {
+                const result = {};
+                if (callback) callback(result);
+                return Promise.resolve(result);
+              },
+              set: (items, callback) => {
+                if (callback) callback();
+                return Promise.resolve();
+              },
+              remove: (keys, callback) => {
+                if (callback) callback();
+                return Promise.resolve();
+              },
+              clear: (callback) => {
+                if (callback) callback();
+                return Promise.resolve();
+              },
+              getBytesInUse: (keys, callback) => {
+                if (callback) callback(0);
+                return Promise.resolve(0);
+              },
+              onChanged: new ExtensionEvent("storage.onChanged")
+            };
+            const storageImpl = local || fallbackStorage;
             return {
               ...base,
+              local: storageImpl,
               // TODO: provide a backend for browsers to opt-in to
-              managed: local,
-              sync: local
+              managed: storageImpl,
+              sync: storageImpl,
+              session: storageImpl
             };
           }
         },

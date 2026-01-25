@@ -528,11 +528,40 @@ export const injectExtensionAPIs = () => {
       storage: {
         factory: (base) => {
           const local = base && base.local
+          // If local storage isn't available, create a simple fallback
+          // to prevent "sync is not available" errors from webextension-polyfill
+          const fallbackStorage = {
+            get: (keys: any, callback?: Function) => {
+              const result = {}
+              if (callback) callback(result)
+              return Promise.resolve(result)
+            },
+            set: (items: any, callback?: Function) => {
+              if (callback) callback()
+              return Promise.resolve()
+            },
+            remove: (keys: any, callback?: Function) => {
+              if (callback) callback()
+              return Promise.resolve()
+            },
+            clear: (callback?: Function) => {
+              if (callback) callback()
+              return Promise.resolve()
+            },
+            getBytesInUse: (keys: any, callback?: Function) => {
+              if (callback) callback(0)
+              return Promise.resolve(0)
+            },
+            onChanged: new ExtensionEvent('storage.onChanged')
+          }
+          const storageImpl = local || fallbackStorage
           return {
             ...base,
+            local: storageImpl,
             // TODO: provide a backend for browsers to opt-in to
-            managed: local,
-            sync: local
+            managed: storageImpl,
+            sync: storageImpl,
+            session: storageImpl
           }
         }
       },
