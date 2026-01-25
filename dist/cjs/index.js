@@ -208,16 +208,20 @@ function generateSWPolyfill() {
     }
   }
 
-  // chrome.tabs
+  // chrome.tabs - ALWAYS override query to use our implementation with popup window tracking
+  var tabsBase = chrome.tabs || {};
+  // Always use our tabs.query implementation for proper currentWindow resolution
+  var ourTabsQuery = invokeExtension('tabs.query');
+  console.log('[electron-chrome-extensions] SW: Overriding tabs.query with our implementation');
+
   if (!chrome.tabs || !chrome.tabs.onCreated) {
-    var tabsBase = chrome.tabs || {};
     chrome.tabs = Object.assign({}, tabsBase, {
       create: tabsBase.create || invokeExtension('tabs.create'),
       get: tabsBase.get || invokeExtension('tabs.get'),
       getCurrent: tabsBase.getCurrent || invokeExtension('tabs.getCurrent'),
       getAllInWindow: tabsBase.getAllInWindow || invokeExtension('tabs.getAllInWindow'),
       insertCSS: tabsBase.insertCSS || invokeExtension('tabs.insertCSS'),
-      query: tabsBase.query || invokeExtension('tabs.query'),
+      query: ourTabsQuery, // Always use our implementation
       reload: tabsBase.reload || invokeExtension('tabs.reload'),
       update: tabsBase.update || invokeExtension('tabs.update'),
       remove: tabsBase.remove || invokeExtension('tabs.remove'),
@@ -229,6 +233,9 @@ function generateSWPolyfill() {
       onActivated: new ExtensionEvent('tabs.onActivated'),
       onReplaced: new ExtensionEvent('tabs.onReplaced')
     });
+  } else {
+    // Electron provides chrome.tabs, but we still need to override query
+    chrome.tabs.query = ourTabsQuery;
   }
 
   // chrome.windows
