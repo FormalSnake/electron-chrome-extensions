@@ -357,9 +357,8 @@ function generateSWPolyfill() {
     var onMessageListeners = [];
     var originalOnMessage = chrome.runtime.onMessage;
 
-    // Listen for messages from our IPC
-    var ipcRenderer = require('electron').ipcRenderer;
-    ipcRenderer.on('crx-runtime.onMessage', function(event, messageId, message, sender) {
+    // Listen for messages from our IPC using the electron bridge
+    electron.onIpc('crx-runtime.onMessage', function(messageId, message, sender) {
       console.log('[electron-chrome-extensions] SW received message:', messageId, message);
 
       var responded = false;
@@ -367,7 +366,7 @@ function generateSWPolyfill() {
         if (!responded) {
           responded = true;
           console.log('[electron-chrome-extensions] SW sending response:', messageId, response);
-          ipcRenderer.send('crx-runtime-response', messageId, response);
+          electron.sendIpc('crx-runtime-response', messageId, response);
         }
       };
 

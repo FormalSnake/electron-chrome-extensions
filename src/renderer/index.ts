@@ -83,12 +83,24 @@ export const injectExtensionAPIs = () => {
     invokeExtension(extensionId, 'runtime.disconnectNative', {}, connectionId)
   }
 
+  // Send IPC message (for runtime message responses)
+  const sendIpc = (channel: string, ...args: any[]) => {
+    ipcRenderer.send(channel, ...args)
+  }
+
+  // Listen for IPC messages (for runtime.onMessage)
+  const onIpc = (channel: string, callback: (...args: any[]) => void) => {
+    ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+  }
+
   const electronContext = {
     invokeExtension,
     addExtensionListener,
     removeExtensionListener,
     connectNative,
-    disconnectNative
+    disconnectNative,
+    sendIpc,
+    onIpc
   }
 
   // Function body to run in the main world.

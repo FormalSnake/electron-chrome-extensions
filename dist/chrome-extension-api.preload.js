@@ -92,12 +92,20 @@
     const disconnectNative = (extensionId, connectionId) => {
       invokeExtension(extensionId, "runtime.disconnectNative", {}, connectionId);
     };
+    const sendIpc = (channel, ...args) => {
+      import_electron2.ipcRenderer.send(channel, ...args);
+    };
+    const onIpc = (channel, callback) => {
+      import_electron2.ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+    };
     const electronContext = {
       invokeExtension,
       addExtensionListener,
       removeExtensionListener,
       connectNative,
-      disconnectNative
+      disconnectNative,
+      sendIpc,
+      onIpc
     };
     function mainWorldScript() {
       console.log("[electron-chrome-extensions] mainWorldScript running in:", location.href);
