@@ -946,12 +946,19 @@ var BrowserActionAPI = class {
         alignment
       });
       if (this.popup.browserWindow) {
+        console.log("[browser-action] Registering popup:", {
+          popupWindowId: this.popup.browserWindow.id,
+          parentWindowId: win.id
+        });
         this.ctx.store.registerPopup(this.popup.browserWindow, win);
         this.popup.browserWindow.once("closed", () => {
+          console.log("[browser-action] Popup closed, unregistering");
           if (this.popup?.browserWindow) {
             this.ctx.store.unregisterPopup(this.popup.browserWindow);
           }
         });
+      } else {
+        console.log("[browser-action] WARNING: popup.browserWindow is undefined!");
       }
       d2(`opened popup: ${popupUrl}`);
       this.ctx.emit("browser-action-popup-created", this.popup);
@@ -1337,10 +1344,24 @@ var _TabsAPI = class _TabsAPI {
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
     let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
+    console.log("[tabs.query] Initial state:", {
+      eventType: event.type,
+      hasSender: !!event.sender,
+      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
+      totalTabs: this.ctx.store.tabs.size,
+      totalWindows: this.ctx.store.windows.size,
+      popupWindowsCount: this.ctx.store.popupWindows.size
+    });
     if (event.type === "frame" && event.sender) {
       const senderWindow = BrowserWindow3.fromWebContents(event.sender);
+      console.log("[tabs.query] Sender window:", {
+        senderWindowId: senderWindow?.id,
+        senderWindowDestroyed: senderWindow?.isDestroyed(),
+        isPopup: senderWindow ? this.ctx.store.isPopup(senderWindow) : false
+      });
       if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
         const parentWindow = this.ctx.store.getPopupParent(senderWindow);
+        console.log("[tabs.query] Found popup, parent:", parentWindow?.id);
         if (parentWindow) {
           resolvedWindowId = parentWindow.id;
           d4(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`);
@@ -1355,10 +1376,10 @@ var _TabsAPI = class _TabsAPI {
       });
       if (firstWindowWithTabs) {
         resolvedWindowId = firstWindowWithTabs.id;
-        d4(`[tabs.query] Using fallback window: ${resolvedWindowId}`);
+        console.log("[tabs.query] Using fallback window:", resolvedWindowId);
       }
     }
-    d4("[tabs.query] called with:", JSON.stringify(info), "resolvedWindowId:", resolvedWindowId, "total tabs:", this.ctx.store.tabs.size);
+    console.log("[tabs.query] Final resolvedWindowId:", resolvedWindowId, "query:", JSON.stringify(info));
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
@@ -1402,7 +1423,14 @@ var _TabsAPI = class _TabsAPI {
       }
       return tab;
     });
-    d4("[tabs.query] result:", filteredTabs.length, "tabs");
+    console.log("[tabs.query] Result:", filteredTabs.length, "tabs, first:", filteredTabs[0]?.url?.substring(0, 50));
+    if (filteredTabs.length === 0) {
+      console.log("[tabs.query] WARNING: No tabs matched! All tabs in store:");
+      Array.from(this.ctx.store.tabs).forEach((tab, i) => {
+        const win = this.ctx.store.tabToWindow.get(tab);
+        console.log(`  [${i}] id=${tab.id}, windowId=${win?.id}, active=${this.ctx.store.getActiveTabFromWebContents(tab)?.id === tab.id}, url=${tab.getURL()?.substring(0, 50)}`);
+      });
+    }
     return filteredTabs;
   }
   reload(event, arg1, arg2) {

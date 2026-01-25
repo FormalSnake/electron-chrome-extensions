@@ -423,13 +423,20 @@ export class BrowserActionAPI {
 
       // Register popup with its parent window for currentWindow resolution
       if (this.popup.browserWindow) {
+        console.log('[browser-action] Registering popup:', {
+          popupWindowId: this.popup.browserWindow.id,
+          parentWindowId: win.id
+        })
         this.ctx.store.registerPopup(this.popup.browserWindow, win)
 
         this.popup.browserWindow.once('closed', () => {
+          console.log('[browser-action] Popup closed, unregistering')
           if (this.popup?.browserWindow) {
             this.ctx.store.unregisterPopup(this.popup.browserWindow)
           }
         })
+      } else {
+        console.log('[browser-action] WARNING: popup.browserWindow is undefined!')
       }
 
       d(`opened popup: ${popupUrl}`)

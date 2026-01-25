@@ -193,11 +193,26 @@ export class TabsAPI {
     // Resolve the target window ID for currentWindow/lastFocusedWindow queries
     let resolvedWindowId = this.ctx.store.lastFocusedWindowId
 
+    console.log('[tabs.query] Initial state:', {
+      eventType: event.type,
+      hasSender: !!event.sender,
+      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
+      totalTabs: this.ctx.store.tabs.size,
+      totalWindows: this.ctx.store.windows.size,
+      popupWindowsCount: this.ctx.store.popupWindows.size
+    })
+
     // If query is from a popup, resolve to popup's parent window
     if (event.type === 'frame' && event.sender) {
       const senderWindow = BrowserWindow.fromWebContents(event.sender)
+      console.log('[tabs.query] Sender window:', {
+        senderWindowId: senderWindow?.id,
+        senderWindowDestroyed: senderWindow?.isDestroyed(),
+        isPopup: senderWindow ? this.ctx.store.isPopup(senderWindow) : false
+      })
       if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
         const parentWindow = this.ctx.store.getPopupParent(senderWindow)
+        console.log('[tabs.query] Found popup, parent:', parentWindow?.id)
         if (parentWindow) {
           resolvedWindowId = parentWindow.id
           d(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`)
@@ -214,11 +229,11 @@ export class TabsAPI {
       })
       if (firstWindowWithTabs) {
         resolvedWindowId = firstWindowWithTabs.id
-        d(`[tabs.query] Using fallback window: ${resolvedWindowId}`)
+        console.log('[tabs.query] Using fallback window:', resolvedWindowId)
       }
     }
 
-    d('[tabs.query] called with:', JSON.stringify(info), 'resolvedWindowId:', resolvedWindowId, 'total tabs:', this.ctx.store.tabs.size)
+    console.log('[tabs.query] Final resolvedWindowId:', resolvedWindowId, 'query:', JSON.stringify(info))
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.createTabDetails.bind(this))
@@ -271,7 +286,15 @@ export class TabsAPI {
         }
         return tab
       })
-    d('[tabs.query] result:', filteredTabs.length, 'tabs')
+    console.log('[tabs.query] Result:', filteredTabs.length, 'tabs, first:', filteredTabs[0]?.url?.substring(0, 50))
+    // Log all tabs in store for debugging
+    if (filteredTabs.length === 0) {
+      console.log('[tabs.query] WARNING: No tabs matched! All tabs in store:')
+      Array.from(this.ctx.store.tabs).forEach((tab, i) => {
+        const win = this.ctx.store.tabToWindow.get(tab)
+        console.log(`  [${i}] id=${tab.id}, windowId=${win?.id}, active=${this.ctx.store.getActiveTabFromWebContents(tab)?.id === tab.id}, url=${tab.getURL()?.substring(0, 50)}`)
+      })
+    }
     return filteredTabs
   }
 
