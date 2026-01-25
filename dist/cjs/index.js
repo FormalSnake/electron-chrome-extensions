@@ -3178,10 +3178,16 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
       return mimeTypes[ext] || "application/octet-stream";
     };
     try {
-      if (session2.protocol.isProtocolHandled("chrome-extension")) {
+      const isHandled = session2.protocol.isProtocolHandled("chrome-extension");
+      console.log("[electron-chrome-extensions] chrome-extension:// protocol already handled:", isHandled);
+      if (isHandled) {
+        console.log("[electron-chrome-extensions] Attempting to unhandle chrome-extension://");
         session2.protocol.unhandle("chrome-extension");
+        console.log("[electron-chrome-extensions] Successfully unhandled chrome-extension://");
       }
+      console.log("[electron-chrome-extensions] Registering chrome-extension:// protocol handler");
       session2.protocol.handle("chrome-extension", (request) => {
+        console.log("[electron-chrome-extensions] Protocol handler called for:", request.url);
         let url;
         try {
           url = new URL(request.url);
