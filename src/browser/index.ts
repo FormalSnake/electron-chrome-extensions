@@ -1,8 +1,9 @@
 import { session as electronSession } from 'electron'
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { generateSWPolyfill } from './sw-polyfill'
 
 import { BrowserActionAPI } from './api/browser-action'
 import { TabsAPI } from './api/tabs'
@@ -133,6 +134,12 @@ export class ElectronChromeExtensions extends EventEmitter {
     windows: WindowsAPI
   }
 
+  /** Maps extension ID -> service worker script relative path */
+  private swScriptPaths: Map<string, string> = new Map()
+
+  /** Cached polyfill code */
+  private swPolyfill: string = generateSWPolyfill()
+
   constructor(opts: ChromeExtensionOptions) {
     super()
 
@@ -172,12 +179,26 @@ export class ElectronChromeExtensions extends EventEmitter {
 
     this.listenForExtensions()
     this.prependPreload(opts.modulePath)
+    this.setupSWScriptInterception()
   }
 
   private listenForExtensions() {
     const sessionExtensions = this.ctx.session.extensions || this.ctx.session
     sessionExtensions.addListener('extension-loaded', (_event, extension) => {
       readLoadedExtensionManifest(this.ctx, extension)
+
+      // Track service worker script paths for MV3 extensions
+      const manifest = extension.manifest as chrome.runtime.Manifest
+      if (manifest.manifest_version === 3 && manifest.background) {
+        const bg = manifest.background as { service_worker?: string }
+        if (bg.service_worker) {
+          this.swScriptPaths.set(extension.id, bg.service_worker)
+        }
+      }
+    })
+
+    sessionExtensions.addListener('extension-unloaded', (_event, extension) => {
+      this.swScriptPaths.delete(extension.id)
     })
   }
 
@@ -208,6 +229,108 @@ export class ElectronChromeExtensions extends EventEmitter {
           `electron-chrome-extensions: Preload file not found at "${preloadPath}". ` +
             'See "Packaging the preload script" in the readme.'
         )
+      )
+    }
+  }
+
+  /**
+   * Intercepts chrome-extension:// protocol to augment service worker scripts
+   * with chrome.* API polyfills. This is necessary because contextBridge's
+   * executeInMainWorld in SW preloads targets a separate "preload realm" V8
+   * context that's different from the SW script's execution context.
+   */
+  private setupSWScriptInterception() {
+    const { session } = this.ctx
+
+    const getMimeType = (filePath: string): string => {
+      const ext = path.extname(filePath).toLowerCase()
+      const mimeTypes: Record<string, string> = {
+        '.js': 'application/javascript',
+        '.mjs': 'application/javascript',
+        '.json': 'application/json',
+        '.html': 'text/html',
+        '.htm': 'text/html',
+        '.css': 'text/css',
+        '.svg': 'image/svg+xml',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.wasm': 'application/wasm',
+        '.map': 'application/json'
+      }
+      return mimeTypes[ext] || 'application/octet-stream'
+    }
+
+    try {
+      if (session.protocol.isProtocolHandled('chrome-extension')) {
+        session.protocol.unhandle('chrome-extension')
+      }
+
+      session.protocol.handle('chrome-extension', (request) => {
+        let url: URL
+        try {
+          url = new URL(request.url)
+        } catch {
+          return new Response('Invalid URL', { status: 400 })
+        }
+
+        const extensionId = url.hostname
+        const requestPath = decodeURIComponent(url.pathname)
+
+        // Get the extension to find its base path
+        const sessionExtensions = session.extensions || session
+        const extension = sessionExtensions.getExtension(extensionId)
+        if (!extension) {
+          return new Response('Extension not found', { status: 404 })
+        }
+
+        const filePath = path.join(extension.path, requestPath)
+
+        // Security: prevent path traversal
+        if (!filePath.startsWith(extension.path)) {
+          return new Response('Forbidden', { status: 403 })
+        }
+
+        try {
+          const content = readFileSync(filePath)
+
+          // Check if this is a service worker script that needs polyfill
+          const swScript = this.swScriptPaths.get(extensionId)
+          const normalizedRequest = requestPath.replace(/^\//, '')
+          const isSwScript = swScript && normalizedRequest === swScript
+
+          if (isSwScript) {
+            // Prepend polyfill to service worker script
+            const augmentedContent = this.swPolyfill + content.toString('utf-8')
+            return new Response(augmentedContent, {
+              headers: {
+                'Content-Type': 'application/javascript',
+                'Cache-Control': 'no-cache'
+              }
+            })
+          }
+
+          // Serve other files normally
+          return new Response(content, {
+            headers: { 'Content-Type': getMimeType(filePath) }
+          })
+        } catch (err: any) {
+          if (err.code === 'ENOENT') {
+            return new Response('Not found', { status: 404 })
+          }
+          return new Response('Internal error', { status: 500 })
+        }
+      })
+    } catch (err) {
+      console.error('[electron-chrome-extensions] Failed to set up SW script interception:', err)
+      console.error(
+        'Service worker API augmentation will not be available. ' +
+        'chrome.commands, chrome.contextMenus, etc. may not work in MV3 extensions.'
       )
     }
   }

@@ -72,7 +72,7 @@
       }
     };
     const connectNative = (extensionId, application, receive, disconnect, callback) => {
-      const connectionId = import_electron2.contextBridge.executeInMainWorld({
+      const connectionId = process.type === "service-worker" ? __require("node:crypto").randomUUID() : import_electron2.contextBridge.executeInMainWorld({
         func: () => crypto.randomUUID()
       });
       invokeExtension(extensionId, "runtime.connectNative", {}, connectionId, application);
@@ -571,37 +571,7 @@
         });
       });
       delete globalThis.electron;
-      if (globalThis.__crx_skip_freeze) {
-        delete globalThis.__crx_skip_freeze;
-        const savedAPIs = {};
-        Object.keys(apiDefinitions).forEach((key) => {
-          const api = apiDefinitions[key];
-          if (api?.shouldInject && !api.shouldInject()) return;
-          if (chrome[key]) {
-            savedAPIs[key] = chrome[key];
-          }
-        });
-        const applyAPIs = () => {
-          const currentChrome = globalThis.chrome;
-          if (!currentChrome) {
-            setTimeout(applyAPIs, 0);
-            return;
-          }
-          for (const [key, value] of Object.entries(savedAPIs)) {
-            if (!currentChrome[key]) {
-              Object.defineProperty(currentChrome, key, {
-                value,
-                enumerable: true,
-                configurable: true
-              });
-            }
-          }
-        };
-        queueMicrotask(applyAPIs);
-        setTimeout(applyAPIs, 0);
-      } else {
-        Object.freeze(chrome);
-      }
+      Object.freeze(chrome);
     }
     if (!process.contextIsolated) {
       console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);
@@ -610,15 +580,10 @@
     }
     try {
       import_electron2.contextBridge.exposeInMainWorld("electron", electronContext);
+      if (process.type === "service-worker") {
+        return;
+      }
       if ("executeInMainWorld" in import_electron2.contextBridge) {
-        if (process.type === "service-worker") {
-          ;
-          import_electron2.contextBridge.executeInMainWorld({
-            func: () => {
-              globalThis.__crx_skip_freeze = true;
-            }
-          });
-        }
         ;
         import_electron2.contextBridge.executeInMainWorld({
           func: mainWorldScript

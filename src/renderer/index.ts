@@ -59,9 +59,11 @@ export const injectExtensionAPIs = () => {
     disconnect: () => void,
     callback: ConnectNativeCallback
   ) => {
-    const connectionId = (contextBridge as any).executeInMainWorld({
-      func: () => crypto.randomUUID()
-    })
+    const connectionId = process.type === 'service-worker'
+      ? require('node:crypto').randomUUID()
+      : (contextBridge as any).executeInMainWorld({
+          func: () => crypto.randomUUID()
+        })
     invokeExtension(extensionId, 'runtime.connectNative', {}, connectionId, application)
     const onMessage = (_event: Electron.IpcRendererEvent, message: any) => {
       receive(message)
@@ -664,41 +666,7 @@ export const injectExtensionAPIs = () => {
     // Remove access to internals
     delete (globalThis as any).electron
 
-    if ((globalThis as any).__crx_skip_freeze) {
-      delete (globalThis as any).__crx_skip_freeze
-
-      // Service worker context: Electron replaces the chrome object after
-      // executeInMainWorld via V8 internals. Store our APIs in a separate global
-      // and re-apply them after a microtask/timeout when chrome is final.
-      const savedAPIs: Record<string, any> = {}
-      Object.keys(apiDefinitions).forEach((key: any) => {
-        const api = apiDefinitions[key as keyof typeof apiDefinitions]
-        if (api?.shouldInject && !api.shouldInject()) return
-        if ((chrome as any)[key]) {
-          savedAPIs[key] = (chrome as any)[key]
-        }
-      })
-
-      const applyAPIs = () => {
-        const currentChrome = (globalThis as any).chrome
-        if (!currentChrome) { setTimeout(applyAPIs, 0); return }
-        for (const [key, value] of Object.entries(savedAPIs)) {
-          if (!currentChrome[key]) {
-            Object.defineProperty(currentChrome, key, {
-              value,
-              enumerable: true,
-              configurable: true
-            })
-          }
-        }
-      }
-
-      // Try multiple timing strategies
-      queueMicrotask(applyAPIs)
-      setTimeout(applyAPIs, 0)
-    } else {
-      Object.freeze(chrome)
-    }
+    Object.freeze(chrome)
 
     void 0 // no return
   }
@@ -713,14 +681,16 @@ export const injectExtensionAPIs = () => {
     // Expose extension IPC to main world
     contextBridge.exposeInMainWorld('electron', electronContext)
 
+    if (process.type === 'service-worker') {
+      // For service workers, only expose the electron bridge.
+      // The chrome.* API augmentation is handled by the polyfill code
+      // prepended to the SW script via protocol interception in the
+      // main process (see sw-polyfill.ts).
+      return
+    }
+
     // Mutate global 'chrome' object with additional APIs in the main world.
     if ('executeInMainWorld' in contextBridge) {
-      // For service workers, skip freezing and install a setter trap instead
-      if (process.type === 'service-worker') {
-        ;(contextBridge as any).executeInMainWorld({
-          func: () => { (globalThis as any).__crx_skip_freeze = true }
-        })
-      }
       ;(contextBridge as any).executeInMainWorld({
         func: mainWorldScript
       })

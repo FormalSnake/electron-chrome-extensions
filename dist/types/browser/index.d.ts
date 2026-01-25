@@ -36,9 +36,20 @@ export declare class ElectronChromeExtensions extends EventEmitter {
     static handleCRXProtocol(session: Electron.Session): void;
     private ctx;
     private api;
+    /** Maps extension ID -> service worker script relative path */
+    private swScriptPaths;
+    /** Cached polyfill code */
+    private swPolyfill;
     constructor(opts: ChromeExtensionOptions);
     private listenForExtensions;
     private prependPreload;
+    /**
+     * Intercepts chrome-extension:// protocol to augment service worker scripts
+     * with chrome.* API polyfills. This is necessary because contextBridge's
+     * executeInMainWorld in SW preloads targets a separate "preload realm" V8
+     * context that's different from the SW script's execution context.
+     */
+    private setupSWScriptInterception;
     private checkWebContentsArgument;
     /** Add webContents to be tracked as a tab. */
     addTab(tab: Electron.WebContents, window: Electron.BaseWindow): void;
