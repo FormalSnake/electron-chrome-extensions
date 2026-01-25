@@ -100,6 +100,7 @@
       disconnectNative
     };
     function mainWorldScript() {
+      console.log("[electron-chrome-extensions] mainWorldScript running in:", location.href);
       const electron = globalThis.electron || electronContext;
       const chrome = globalThis.chrome || {};
       if (!globalThis.chrome) {
@@ -598,6 +599,7 @@
         });
       });
       delete globalThis.electron;
+      console.log("[electron-chrome-extensions] APIs injected, storage.sync:", !!chrome.storage?.sync);
       Object.freeze(chrome);
     }
     if (!process.contextIsolated) {

@@ -94,6 +94,8 @@ export const injectExtensionAPIs = () => {
   // Function body to run in the main world.
   // IMPORTANT: This must be self-contained, no closure variable will be included!
   function mainWorldScript() {
+    console.log('[electron-chrome-extensions] mainWorldScript running in:', location.href)
+
     // Use context bridge API or closure variable when context isolation is disabled.
     const electron = ((globalThis as any).electron as typeof electronContext) || electronContext
 
@@ -694,6 +696,8 @@ export const injectExtensionAPIs = () => {
 
     // Remove access to internals
     delete (globalThis as any).electron
+
+    console.log('[electron-chrome-extensions] APIs injected, storage.sync:', !!chrome.storage?.sync)
 
     Object.freeze(chrome)
 
