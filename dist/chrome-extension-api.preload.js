@@ -592,11 +592,24 @@
         const baseApi = chrome[apiName];
         const api = apiDefinitions[apiName];
         if (api.shouldInject && !api.shouldInject()) return;
-        Object.defineProperty(chrome, apiName, {
-          value: api.factory(baseApi),
-          enumerable: true,
-          configurable: true
-        });
+        try {
+          const desc = Object.getOwnPropertyDescriptor(chrome, apiName);
+          if (desc && !desc.configurable) {
+            console.warn(`[electron-chrome-extensions] ${apiName} is non-configurable, trying direct assignment`);
+            const newValue = api.factory(baseApi);
+            if (baseApi && typeof baseApi === "object" && typeof newValue === "object") {
+              Object.assign(baseApi, newValue);
+            }
+          } else {
+            Object.defineProperty(chrome, apiName, {
+              value: api.factory(baseApi),
+              enumerable: true,
+              configurable: true
+            });
+          }
+        } catch (e) {
+          console.error(`[electron-chrome-extensions] Failed to define ${apiName}:`, e);
+        }
       });
       delete globalThis.electron;
       console.log("[electron-chrome-extensions] APIs injected, storage.sync:", !!chrome.storage?.sync);
