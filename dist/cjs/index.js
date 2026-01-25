@@ -369,10 +369,31 @@ function generateSWPolyfill() {
     });
   }
 
+  // Set up browser.* APIs for extensions using webextension-polyfill
+  // Create browser as a Proxy to chrome BEFORE webextension-polyfill runs
+  // This way webextension-polyfill will detect an existing browser object and not create its own
+  if (!globalThis.browser || !globalThis.browser.runtime || !globalThis.browser.runtime.id) {
+    globalThis.browser = new Proxy(chrome, {
+      get: function(target, prop) {
+        return target[prop];
+      },
+      has: function(target, prop) {
+        return prop in target;
+      },
+      ownKeys: function(target) {
+        return Object.keys(target);
+      },
+      getOwnPropertyDescriptor: function(target, prop) {
+        return Object.getOwnPropertyDescriptor(target, prop);
+      }
+    });
+    console.log('[electron-chrome-extensions] browser.* Proxy to chrome created');
+  }
+
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code
 
-  console.log('[electron-chrome-extensions] SW polyfill setup complete, chrome.commands:', !!chrome.commands, 'onCommand:', !!(chrome.commands && chrome.commands.onCommand));
+  console.log('[electron-chrome-extensions] SW polyfill setup complete, chrome.commands:', !!chrome.commands);
 
 })();
 `;
