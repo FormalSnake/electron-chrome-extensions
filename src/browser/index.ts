@@ -277,6 +277,16 @@ export class ElectronChromeExtensions extends EventEmitter {
       }
 
       console.log('[electron-chrome-extensions] Registering chrome-extension:// protocol handler')
+
+      // Also try webRequest to see if SW script requests are visible
+      session.webRequest.onBeforeRequest(
+        { urls: ['chrome-extension://*/*'] },
+        (details, callback) => {
+          console.log('[electron-chrome-extensions] webRequest intercepted:', details.url, 'type:', details.resourceType)
+          callback({})
+        }
+      )
+
       session.protocol.handle('chrome-extension', (request) => {
         console.log('[electron-chrome-extensions] Protocol handler called for:', request.url)
         let url: URL

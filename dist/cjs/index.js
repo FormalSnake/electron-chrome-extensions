@@ -3186,6 +3186,13 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
         console.log("[electron-chrome-extensions] Successfully unhandled chrome-extension://");
       }
       console.log("[electron-chrome-extensions] Registering chrome-extension:// protocol handler");
+      session2.webRequest.onBeforeRequest(
+        { urls: ["chrome-extension://*/*"] },
+        (details, callback) => {
+          console.log("[electron-chrome-extensions] webRequest intercepted:", details.url, "type:", details.resourceType);
+          callback({});
+        }
+      );
       session2.protocol.handle("chrome-extension", (request) => {
         console.log("[electron-chrome-extensions] Protocol handler called for:", request.url);
         let url;
