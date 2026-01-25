@@ -39,5 +39,10 @@ export declare class ExtensionStore extends EventEmitter {
     getActiveTabOfCurrentWindow(): Electron.WebContents | undefined;
     setActiveTab(tab: Electron.WebContents): void;
     buildMenuItems(extensionId: string, menuType: ContextMenuType): Electron.MenuItem[];
+    /**
+     * Creates fresh tab details from a WebContents, bypassing cache.
+     * Used by APIs that need current url/title values.
+     */
+    createFreshTabDetails(tab: Electron.WebContents): chrome.tabs.Tab;
     requestPermissions(extension: Electron.Extension, permissions: chrome.permissions.Permissions): Promise<boolean>;
 }

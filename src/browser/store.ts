@@ -195,6 +195,47 @@ export class ExtensionStore extends EventEmitter {
     return []
   }
 
+  /**
+   * Creates fresh tab details from a WebContents, bypassing cache.
+   * Used by APIs that need current url/title values.
+   */
+  createFreshTabDetails(tab: Electron.WebContents): chrome.tabs.Tab {
+    const tabId = tab.id
+    const activeTab = this.getActiveTabFromWebContents(tab)
+    let win = this.tabToWindow.get(tab)
+    if (win?.isDestroyed()) win = undefined
+    const [width = 0, height = 0] = win ? (win as Electron.BrowserWindow).getSize?.() ?? [0, 0] : []
+
+    const details: chrome.tabs.Tab = {
+      active: activeTab?.id === tabId,
+      audible: tab.isCurrentlyAudible(),
+      autoDiscardable: true,
+      discarded: false,
+      favIconUrl: (tab as any).favicon || undefined,
+      frozen: false,
+      height,
+      highlighted: false,
+      id: tabId,
+      incognito: false,
+      index: -1,
+      groupId: -1,
+      mutedInfo: { muted: tab.audioMuted },
+      pinned: false,
+      selected: true,
+      status: tab.isLoading() ? 'loading' : 'complete',
+      title: tab.getTitle(),
+      url: tab.getURL(),
+      width,
+      windowId: win ? win.id : -1
+    }
+
+    if (typeof this.impl.assignTabDetails === 'function') {
+      this.impl.assignTabDetails(details, tab)
+    }
+
+    return details
+  }
+
   async requestPermissions(
     extension: Electron.Extension,
     permissions: chrome.permissions.Permissions

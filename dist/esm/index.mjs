@@ -1809,6 +1809,43 @@ var ExtensionStore = class extends EventEmitter2 {
   buildMenuItems(extensionId, menuType) {
     return [];
   }
+  /**
+   * Creates fresh tab details from a WebContents, bypassing cache.
+   * Used by APIs that need current url/title values.
+   */
+  createFreshTabDetails(tab) {
+    const tabId = tab.id;
+    const activeTab = this.getActiveTabFromWebContents(tab);
+    let win = this.tabToWindow.get(tab);
+    if (win?.isDestroyed()) win = void 0;
+    const [width = 0, height = 0] = win ? win.getSize?.() ?? [0, 0] : [];
+    const details = {
+      active: activeTab?.id === tabId,
+      audible: tab.isCurrentlyAudible(),
+      autoDiscardable: true,
+      discarded: false,
+      favIconUrl: tab.favicon || void 0,
+      frozen: false,
+      height,
+      highlighted: false,
+      id: tabId,
+      incognito: false,
+      index: -1,
+      groupId: -1,
+      mutedInfo: { muted: tab.audioMuted },
+      pinned: false,
+      selected: true,
+      status: tab.isLoading() ? "loading" : "complete",
+      title: tab.getTitle(),
+      url: tab.getURL(),
+      width,
+      windowId: win ? win.id : -1
+    };
+    if (typeof this.impl.assignTabDetails === "function") {
+      this.impl.assignTabDetails(details, tab);
+    }
+    return details;
+  }
   async requestPermissions(extension, permissions) {
     if (typeof this.impl.requestPermissions !== "function") {
       return true;
@@ -2039,11 +2076,7 @@ var ContextMenusAPI = class {
   }
   onClicked(extensionId, menuItemId, webContents2, params) {
     if (webContents2.isDestroyed()) return;
-    const tab = this.ctx.store.tabDetailsCache.get(webContents2.id);
-    if (!tab) {
-      console.error(`[Extensions] Unable to find tab for id=${webContents2.id}`);
-      return;
-    }
+    const tab = this.ctx.store.createFreshTabDetails(webContents2);
     const data = {
       selectionText: params?.selectionText,
       checked: false,

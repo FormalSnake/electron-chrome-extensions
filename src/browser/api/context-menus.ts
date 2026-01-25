@@ -322,11 +322,8 @@ export class ContextMenusAPI {
   ) {
     if (webContents.isDestroyed()) return
 
-    const tab = this.ctx.store.tabDetailsCache.get(webContents.id)
-    if (!tab) {
-      console.error(`[Extensions] Unable to find tab for id=${webContents.id}`)
-      return
-    }
+    // Get fresh tab details instead of cached to ensure url/title are current
+    const tab = this.ctx.store.createFreshTabDetails(webContents)
 
     const data: chrome.contextMenus.OnClickData = {
       selectionText: params?.selectionText,
