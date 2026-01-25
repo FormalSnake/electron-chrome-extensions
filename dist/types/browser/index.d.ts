@@ -42,6 +42,11 @@ export declare class ElectronChromeExtensions extends EventEmitter {
     private swPolyfill;
     constructor(opts: ChromeExtensionOptions);
     private listenForExtensions;
+    /**
+     * Injects the polyfill into an MV3 extension's service worker script file.
+     * This is necessary because MV3 SW scripts bypass protocol.handle and webRequest.
+     */
+    private injectSWPolyfill;
     private prependPreload;
     /**
      * Intercepts chrome-extension:// protocol to augment service worker scripts

@@ -3070,19 +3070,48 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends EventEmit
   }
   listenForExtensions() {
     const sessionExtensions = this.ctx.session.extensions || this.ctx.session;
-    sessionExtensions.addListener("extension-loaded", (_event, extension) => {
+    sessionExtensions.addListener("extension-loaded", async (_event, extension) => {
       readLoadedExtensionManifest(this.ctx, extension);
       const manifest = extension.manifest;
       if (manifest.manifest_version === 3 && manifest.background) {
         const bg = manifest.background;
         if (bg.service_worker) {
           this.swScriptPaths.set(extension.id, bg.service_worker);
+          await this.injectSWPolyfill(extension, bg.service_worker);
         }
       }
     });
     sessionExtensions.addListener("extension-unloaded", (_event, extension) => {
       this.swScriptPaths.delete(extension.id);
     });
+  }
+  /**
+   * Injects the polyfill into an MV3 extension's service worker script file.
+   * This is necessary because MV3 SW scripts bypass protocol.handle and webRequest.
+   */
+  async injectSWPolyfill(extension, swScriptPath) {
+    const filePath = path4.join(extension.path, swScriptPath);
+    const polyfillMarker = "__crxSWPolyfill";
+    try {
+      const content = readFileSync2(filePath, "utf-8");
+      if (content.includes(polyfillMarker)) {
+        console.log(`[electron-chrome-extensions] Polyfill already present in ${extension.name}`);
+        return;
+      }
+      const modifiedContent = this.swPolyfill + "\n" + content;
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(filePath, modifiedContent, "utf-8");
+      console.log(`[electron-chrome-extensions] Injected polyfill into ${extension.name} SW script`);
+      const scope = `chrome-extension://${extension.id}/`;
+      try {
+        await this.ctx.session.serviceWorkers.startWorkerForScope(scope);
+        console.log(`[electron-chrome-extensions] Restarted SW for ${extension.name}`);
+      } catch (err) {
+        console.log(`[electron-chrome-extensions] SW for ${extension.name} will load polyfill on next start`);
+      }
+    } catch (err) {
+      console.error(`[electron-chrome-extensions] Failed to inject polyfill into ${extension.name}:`, err.message);
+    }
   }
   async prependPreload(modulePath) {
     const { session: session2 } = this.ctx;
