@@ -99,29 +99,47 @@ export const injectExtensionAPIs = () => {
     // CRITICAL: Patch chrome.storage.sync IMMEDIATELY before any other code runs
     // This must happen before webextension-polyfill checks for sync
     const chromeObj = (globalThis as any).chrome
-    if (chromeObj && chromeObj.storage && !chromeObj.storage.sync) {
+    console.log('[electron-chrome-extensions] chrome exists:', !!chromeObj,
+                'storage exists:', !!(chromeObj && chromeObj.storage),
+                'storage.sync:', chromeObj?.storage?.sync,
+                'storage.local:', chromeObj?.storage?.local)
+
+    if (chromeObj && chromeObj.storage) {
       const local = chromeObj.storage.local
-      if (local) {
-        // Use Object.defineProperty to ensure it's an own property
+      // Create a fallback if local doesn't exist
+      const storageImpl = local || {
+        get: (keys: any, cb?: Function) => { const r = {}; if(cb) cb(r); return Promise.resolve(r); },
+        set: (items: any, cb?: Function) => { if(cb) cb(); return Promise.resolve(); },
+        remove: (keys: any, cb?: Function) => { if(cb) cb(); return Promise.resolve(); },
+        clear: (cb?: Function) => { if(cb) cb(); return Promise.resolve(); },
+        getBytesInUse: (keys: any, cb?: Function) => { if(cb) cb(0); return Promise.resolve(0); }
+      }
+
+      // Always set sync/managed/session to ensure they exist
+      try {
         Object.defineProperty(chromeObj.storage, 'sync', {
-          value: local,
+          value: storageImpl,
           writable: true,
           enumerable: true,
           configurable: true
         })
         Object.defineProperty(chromeObj.storage, 'managed', {
-          value: local,
+          value: storageImpl,
           writable: true,
           enumerable: true,
           configurable: true
         })
         Object.defineProperty(chromeObj.storage, 'session', {
-          value: local,
+          value: storageImpl,
           writable: true,
           enumerable: true,
           configurable: true
         })
-        console.log('[electron-chrome-extensions] Patched storage.sync early, hasOwn:', Object.prototype.hasOwnProperty.call(chromeObj.storage, 'sync'))
+        console.log('[electron-chrome-extensions] Patched storage, sync hasOwn:',
+                    Object.prototype.hasOwnProperty.call(chromeObj.storage, 'sync'),
+                    'sync value:', chromeObj.storage.sync)
+      } catch (e) {
+        console.error('[electron-chrome-extensions] Failed to patch storage:', e)
       }
     }
 

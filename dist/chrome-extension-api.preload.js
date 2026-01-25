@@ -102,28 +102,68 @@
     function mainWorldScript() {
       console.log("[electron-chrome-extensions] mainWorldScript running in:", location.href);
       const chromeObj = globalThis.chrome;
-      if (chromeObj && chromeObj.storage && !chromeObj.storage.sync) {
+      console.log(
+        "[electron-chrome-extensions] chrome exists:",
+        !!chromeObj,
+        "storage exists:",
+        !!(chromeObj && chromeObj.storage),
+        "storage.sync:",
+        chromeObj?.storage?.sync,
+        "storage.local:",
+        chromeObj?.storage?.local
+      );
+      if (chromeObj && chromeObj.storage) {
         const local = chromeObj.storage.local;
-        if (local) {
+        const storageImpl = local || {
+          get: (keys, cb) => {
+            const r = {};
+            if (cb) cb(r);
+            return Promise.resolve(r);
+          },
+          set: (items, cb) => {
+            if (cb) cb();
+            return Promise.resolve();
+          },
+          remove: (keys, cb) => {
+            if (cb) cb();
+            return Promise.resolve();
+          },
+          clear: (cb) => {
+            if (cb) cb();
+            return Promise.resolve();
+          },
+          getBytesInUse: (keys, cb) => {
+            if (cb) cb(0);
+            return Promise.resolve(0);
+          }
+        };
+        try {
           Object.defineProperty(chromeObj.storage, "sync", {
-            value: local,
+            value: storageImpl,
             writable: true,
             enumerable: true,
             configurable: true
           });
           Object.defineProperty(chromeObj.storage, "managed", {
-            value: local,
+            value: storageImpl,
             writable: true,
             enumerable: true,
             configurable: true
           });
           Object.defineProperty(chromeObj.storage, "session", {
-            value: local,
+            value: storageImpl,
             writable: true,
             enumerable: true,
             configurable: true
           });
-          console.log("[electron-chrome-extensions] Patched storage.sync early, hasOwn:", Object.prototype.hasOwnProperty.call(chromeObj.storage, "sync"));
+          console.log(
+            "[electron-chrome-extensions] Patched storage, sync hasOwn:",
+            Object.prototype.hasOwnProperty.call(chromeObj.storage, "sync"),
+            "sync value:",
+            chromeObj.storage.sync
+          );
+        } catch (e) {
+          console.error("[electron-chrome-extensions] Failed to patch storage:", e);
         }
       }
       const electron = globalThis.electron || electronContext;
