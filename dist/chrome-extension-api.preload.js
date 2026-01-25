@@ -508,7 +508,8 @@
         },
         runtime: {
           factory: (base) => {
-            return {
+            console.log("[electron-chrome-extensions] runtime factory called, base.sendMessage:", typeof base?.sendMessage);
+            const runtimeApi = {
               ...base,
               connectNative: (application) => {
                 const port = new NativePort();
@@ -550,6 +551,12 @@
                 return promise;
               }
             };
+            console.log("[electron-chrome-extensions] runtime factory result, sendMessage:", typeof runtimeApi.sendMessage);
+            if (globalThis.browser?.runtime) {
+              console.log("[electron-chrome-extensions] Patching browser.runtime.sendMessage");
+              globalThis.browser.runtime.sendMessage = runtimeApi.sendMessage;
+            }
+            return runtimeApi;
           }
         },
         storage: {

@@ -568,7 +568,9 @@ export const injectExtensionAPIs = () => {
 
       runtime: {
         factory: (base) => {
-          return {
+          console.log('[electron-chrome-extensions] runtime factory called, base.sendMessage:', typeof base?.sendMessage)
+
+          const runtimeApi = {
             ...base,
             connectNative: (application: string) => {
               const port = new NativePort()
@@ -624,6 +626,17 @@ export const injectExtensionAPIs = () => {
               return promise
             }
           }
+
+          console.log('[electron-chrome-extensions] runtime factory result, sendMessage:', typeof runtimeApi.sendMessage)
+
+          // Also patch browser.runtime.sendMessage if browser object exists
+          // (webextension-polyfill may have already wrapped chrome.runtime)
+          if ((globalThis as any).browser?.runtime) {
+            console.log('[electron-chrome-extensions] Patching browser.runtime.sendMessage')
+            ;(globalThis as any).browser.runtime.sendMessage = runtimeApi.sendMessage
+          }
+
+          return runtimeApi
         }
       },
 
