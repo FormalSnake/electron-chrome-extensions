@@ -480,10 +480,15 @@
               onChanged: new ExtensionEvent("storage.onChanged")
             };
             const storageImpl = local || fallbackStorage;
+            if (base) {
+              if (!base.sync) base.sync = storageImpl;
+              if (!base.managed) base.managed = storageImpl;
+              if (!base.session) base.session = storageImpl;
+              if (!base.local) base.local = storageImpl;
+              return base;
+            }
             return {
-              ...base,
               local: storageImpl,
-              // TODO: provide a backend for browsers to opt-in to
               managed: storageImpl,
               sync: storageImpl,
               session: storageImpl

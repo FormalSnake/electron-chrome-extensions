@@ -557,10 +557,20 @@ export const injectExtensionAPIs = () => {
             onChanged: new ExtensionEvent('storage.onChanged')
           }
           const storageImpl = local || fallbackStorage
+
+          // IMPORTANT: Modify existing chrome.storage object in-place rather than
+          // replacing it. webextension-polyfill captures a reference to chrome.storage
+          // before our code runs, so we must mutate the existing object.
+          if (base) {
+            if (!base.sync) base.sync = storageImpl
+            if (!base.managed) base.managed = storageImpl
+            if (!base.session) base.session = storageImpl
+            if (!base.local) base.local = storageImpl
+            return base
+          }
+
           return {
-            ...base,
             local: storageImpl,
-            // TODO: provide a backend for browsers to opt-in to
             managed: storageImpl,
             sync: storageImpl,
             session: storageImpl
