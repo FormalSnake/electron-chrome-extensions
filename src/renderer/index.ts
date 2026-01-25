@@ -569,7 +569,48 @@ export const injectExtensionAPIs = () => {
               return port
             },
             openOptionsPage: invokeExtension('runtime.openOptionsPage'),
-            sendNativeMessage: invokeExtension('runtime.sendNativeMessage')
+            sendNativeMessage: invokeExtension('runtime.sendNativeMessage'),
+            // Custom sendMessage that routes through our IPC
+            sendMessage: function(
+              extensionIdOrMessage: any,
+              messageOrOptions?: any,
+              optionsOrCallback?: any,
+              callback?: Function
+            ) {
+              // Handle overloaded signatures
+              let message: any
+              let options: any
+              let responseCallback: Function | undefined
+
+              if (typeof extensionIdOrMessage === 'string') {
+                // sendMessage(extensionId, message, options?, callback?)
+                message = messageOrOptions
+                options = typeof optionsOrCallback === 'object' ? optionsOrCallback : undefined
+                responseCallback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+              } else {
+                // sendMessage(message, options?, callback?)
+                message = extensionIdOrMessage
+                options = typeof messageOrOptions === 'object' ? messageOrOptions : undefined
+                responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback
+              }
+
+              console.log('[electron-chrome-extensions] popup runtime.sendMessage:', message)
+
+              // Use our custom IPC-based implementation
+              const promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options)
+
+              if (typeof responseCallback === 'function') {
+                promise.then((result: any) => {
+                  responseCallback!(result)
+                }).catch((e: Error) => {
+                  console.error('[electron-chrome-extensions] sendMessage error:', e)
+                  responseCallback!(undefined)
+                })
+                return true // Indicate async response
+              }
+
+              return promise
+            }
           }
         }
       },

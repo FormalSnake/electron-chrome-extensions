@@ -279,6 +279,114 @@ export function generateSWPolyfill(): string {
     if (!chrome.runtime.openOptionsPage) {
       chrome.runtime.openOptionsPage = invokeExtension('runtime.openOptionsPage');
     }
+
+    // Custom runtime.sendMessage that routes through our IPC
+    var originalSendMessage = chrome.runtime.sendMessage;
+    chrome.runtime.sendMessage = function(extensionIdOrMessage, messageOrOptions, optionsOrCallback, callback) {
+      // Handle overloaded signatures
+      var message, options, responseCallback;
+      if (typeof extensionIdOrMessage === 'string') {
+        // sendMessage(extensionId, message, options?, callback?)
+        message = messageOrOptions;
+        options = typeof optionsOrCallback === 'object' ? optionsOrCallback : undefined;
+        responseCallback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+      } else {
+        // sendMessage(message, options?, callback?)
+        message = extensionIdOrMessage;
+        options = typeof messageOrOptions === 'object' ? messageOrOptions : undefined;
+        responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback;
+      }
+
+      console.log('[electron-chrome-extensions] runtime.sendMessage:', message);
+
+      // Use our custom IPC-based implementation
+      var promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options);
+
+      if (typeof responseCallback === 'function') {
+        promise.then(function(result) {
+          responseCallback(result);
+        }).catch(function(e) {
+          console.error('[electron-chrome-extensions] sendMessage error:', e);
+          responseCallback(undefined);
+        });
+        return true; // Indicate async response
+      }
+
+      return promise;
+    };
+
+    // Custom runtime.onMessage handler
+    var onMessageListeners = [];
+    var originalOnMessage = chrome.runtime.onMessage;
+
+    // Listen for messages from our IPC
+    var ipcRenderer = require('electron').ipcRenderer;
+    ipcRenderer.on('crx-runtime.onMessage', function(event, messageId, message, sender) {
+      console.log('[electron-chrome-extensions] SW received message:', messageId, message);
+
+      var responded = false;
+      var sendResponse = function(response) {
+        if (!responded) {
+          responded = true;
+          console.log('[electron-chrome-extensions] SW sending response:', messageId, response);
+          ipcRenderer.send('crx-runtime-response', messageId, response);
+        }
+      };
+
+      // Call all registered listeners
+      var willRespondAsync = false;
+      for (var i = 0; i < onMessageListeners.length; i++) {
+        try {
+          var result = onMessageListeners[i](message, sender, sendResponse);
+          if (result === true) {
+            willRespondAsync = true;
+          } else if (result && typeof result.then === 'function') {
+            // Promise-based response
+            willRespondAsync = true;
+            result.then(function(promiseResult) {
+              sendResponse(promiseResult);
+            }).catch(function(e) {
+              console.error('[electron-chrome-extensions] onMessage promise error:', e);
+              sendResponse(undefined);
+            });
+          }
+        } catch (e) {
+          console.error('[electron-chrome-extensions] onMessage listener error:', e);
+        }
+      }
+
+      // If no listener indicated async response, send undefined
+      if (!willRespondAsync && !responded) {
+        sendResponse(undefined);
+      }
+    });
+
+    // Override onMessage to use our listener array
+    chrome.runtime.onMessage = {
+      addListener: function(callback) {
+        console.log('[electron-chrome-extensions] SW onMessage.addListener called');
+        onMessageListeners.push(callback);
+        // Also register with original if it exists (for Electron's built-in messaging)
+        if (originalOnMessage && originalOnMessage.addListener) {
+          originalOnMessage.addListener(callback);
+        }
+      },
+      removeListener: function(callback) {
+        var index = onMessageListeners.indexOf(callback);
+        if (index > -1) {
+          onMessageListeners.splice(index, 1);
+        }
+        if (originalOnMessage && originalOnMessage.removeListener) {
+          originalOnMessage.removeListener(callback);
+        }
+      },
+      hasListener: function(callback) {
+        return onMessageListeners.indexOf(callback) > -1;
+      },
+      hasListeners: function() {
+        return onMessageListeners.length > 0;
+      }
+    };
   }
 
   // chrome.extension

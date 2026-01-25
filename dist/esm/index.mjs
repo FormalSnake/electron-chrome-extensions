@@ -280,6 +280,114 @@ function generateSWPolyfill() {
     if (!chrome.runtime.openOptionsPage) {
       chrome.runtime.openOptionsPage = invokeExtension('runtime.openOptionsPage');
     }
+
+    // Custom runtime.sendMessage that routes through our IPC
+    var originalSendMessage = chrome.runtime.sendMessage;
+    chrome.runtime.sendMessage = function(extensionIdOrMessage, messageOrOptions, optionsOrCallback, callback) {
+      // Handle overloaded signatures
+      var message, options, responseCallback;
+      if (typeof extensionIdOrMessage === 'string') {
+        // sendMessage(extensionId, message, options?, callback?)
+        message = messageOrOptions;
+        options = typeof optionsOrCallback === 'object' ? optionsOrCallback : undefined;
+        responseCallback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+      } else {
+        // sendMessage(message, options?, callback?)
+        message = extensionIdOrMessage;
+        options = typeof messageOrOptions === 'object' ? messageOrOptions : undefined;
+        responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback;
+      }
+
+      console.log('[electron-chrome-extensions] runtime.sendMessage:', message);
+
+      // Use our custom IPC-based implementation
+      var promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options);
+
+      if (typeof responseCallback === 'function') {
+        promise.then(function(result) {
+          responseCallback(result);
+        }).catch(function(e) {
+          console.error('[electron-chrome-extensions] sendMessage error:', e);
+          responseCallback(undefined);
+        });
+        return true; // Indicate async response
+      }
+
+      return promise;
+    };
+
+    // Custom runtime.onMessage handler
+    var onMessageListeners = [];
+    var originalOnMessage = chrome.runtime.onMessage;
+
+    // Listen for messages from our IPC
+    var ipcRenderer = require('electron').ipcRenderer;
+    ipcRenderer.on('crx-runtime.onMessage', function(event, messageId, message, sender) {
+      console.log('[electron-chrome-extensions] SW received message:', messageId, message);
+
+      var responded = false;
+      var sendResponse = function(response) {
+        if (!responded) {
+          responded = true;
+          console.log('[electron-chrome-extensions] SW sending response:', messageId, response);
+          ipcRenderer.send('crx-runtime-response', messageId, response);
+        }
+      };
+
+      // Call all registered listeners
+      var willRespondAsync = false;
+      for (var i = 0; i < onMessageListeners.length; i++) {
+        try {
+          var result = onMessageListeners[i](message, sender, sendResponse);
+          if (result === true) {
+            willRespondAsync = true;
+          } else if (result && typeof result.then === 'function') {
+            // Promise-based response
+            willRespondAsync = true;
+            result.then(function(promiseResult) {
+              sendResponse(promiseResult);
+            }).catch(function(e) {
+              console.error('[electron-chrome-extensions] onMessage promise error:', e);
+              sendResponse(undefined);
+            });
+          }
+        } catch (e) {
+          console.error('[electron-chrome-extensions] onMessage listener error:', e);
+        }
+      }
+
+      // If no listener indicated async response, send undefined
+      if (!willRespondAsync && !responded) {
+        sendResponse(undefined);
+      }
+    });
+
+    // Override onMessage to use our listener array
+    chrome.runtime.onMessage = {
+      addListener: function(callback) {
+        console.log('[electron-chrome-extensions] SW onMessage.addListener called');
+        onMessageListeners.push(callback);
+        // Also register with original if it exists (for Electron's built-in messaging)
+        if (originalOnMessage && originalOnMessage.addListener) {
+          originalOnMessage.addListener(callback);
+        }
+      },
+      removeListener: function(callback) {
+        var index = onMessageListeners.indexOf(callback);
+        if (index > -1) {
+          onMessageListeners.splice(index, 1);
+        }
+        if (originalOnMessage && originalOnMessage.removeListener) {
+          originalOnMessage.removeListener(callback);
+        }
+      },
+      hasListener: function(callback) {
+        return onMessageListeners.indexOf(callback) > -1;
+      },
+      hasListeners: function() {
+        return onMessageListeners.length > 0;
+      }
+    };
   }
 
   // chrome.extension
@@ -2200,6 +2308,7 @@ var ContextMenusAPI = class {
 // src/browser/api/runtime.ts
 import { randomUUID } from "node:crypto";
 import { EventEmitter as EventEmitter3 } from "node:events";
+import { ipcMain } from "electron";
 
 // src/browser/api/lib/native-messaging-host.ts
 import { spawn as spawn2 } from "node:child_process";
@@ -2419,11 +2528,49 @@ var NativeMessagingHost = class {
 };
 
 // src/browser/api/runtime.ts
+import debug8 from "debug";
+var d8 = debug8("electron-chrome-extensions:runtime");
 var RuntimeAPI = class extends EventEmitter3 {
   constructor(ctx) {
     super();
     this.ctx = ctx;
     this.hostMap = {};
+    // Pending message responses: messageId -> { resolve, reject, timeout }
+    this.pendingResponses = /* @__PURE__ */ new Map();
+    this.sendMessage = async (event, message, options) => {
+      const extensionId = event.extension.id;
+      const messageId = randomUUID();
+      d8("sendMessage from %s: messageId=%s, message=%o", extensionId, messageId, message);
+      const sender = {
+        id: extensionId,
+        url: event.type === "frame" ? event.sender.getURL() : `chrome-extension://${extensionId}/`
+      };
+      if (event.type === "frame") {
+        const tab = this.ctx.store.getTabById(event.sender.id);
+        if (tab) {
+          const tabDetails = this.ctx.store.tabDetailsCache.get(tab.id);
+          if (tabDetails) {
+            sender.tab = tabDetails;
+          }
+        }
+      }
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.pendingResponses.delete(messageId);
+          d8("sendMessage timeout for %s", messageId);
+          resolve(void 0);
+        }, 3e4);
+        this.pendingResponses.set(messageId, { resolve, reject, timeout });
+        const scope = `chrome-extension://${extensionId}/`;
+        this.ctx.session.serviceWorkers.startWorkerForScope(scope).then((serviceWorker) => {
+          d8("sending message to service worker: %s", scope);
+          serviceWorker.send("crx-runtime.onMessage", messageId, message, sender);
+        }).catch((error) => {
+          d8("failed to send message to service worker: %s", error);
+          this.ctx.router.sendEvent(extensionId, "runtime.onMessage", messageId, message, sender);
+        });
+      });
+    };
     this.connectNative = async (event, connectionId, application) => {
       const host = new NativeMessagingHost(
         event.extension.id,
@@ -2464,6 +2611,27 @@ var RuntimeAPI = class extends EventEmitter3 {
     handle("runtime.disconnectNative", this.disconnectNative, { permission: "nativeMessaging" });
     handle("runtime.openOptionsPage", this.openOptionsPage);
     handle("runtime.sendNativeMessage", this.sendNativeMessage, { permission: "nativeMessaging" });
+    handle("runtime.sendMessage", this.sendMessage.bind(this));
+    this.setupResponseHandler();
+  }
+  setupResponseHandler() {
+    const handler = (_event, messageId, response) => {
+      d8("received response for message %s: %o", messageId, response);
+      const pending = this.pendingResponses.get(messageId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingResponses.delete(messageId);
+        pending.resolve(response);
+      }
+    };
+    ipcMain.on("crx-runtime-response", handler);
+    this.ctx.session.serviceWorkers.on("running-status-changed", ({ runningStatus, versionId }) => {
+      if (runningStatus !== "starting") return;
+      const sw = this.ctx.session.serviceWorkers.getWorkerFromVersionID(versionId);
+      if (sw?.scope?.startsWith("chrome-extension://")) {
+        sw.ipc.on("crx-runtime-response", handler);
+      }
+    });
   }
 };
 
@@ -2708,8 +2876,8 @@ var CommandsAPI = class {
 };
 
 // src/browser/router.ts
-import { app as app4, ipcMain } from "electron";
-import debug8 from "debug";
+import { app as app4, ipcMain as ipcMain2 } from "electron";
+import debug9 from "debug";
 
 // src/browser/partition.ts
 import { session } from "electron";
@@ -2723,7 +2891,7 @@ function resolvePartition(partition) {
 
 // src/browser/router.ts
 var shortenValues = (k, v) => typeof v === "string" && v.length > 128 ? v.substr(0, 128) + "..." : v;
-debug8.formatters.r = (value) => {
+debug9.formatters.r = (value) => {
   return value ? JSON.stringify(value, shortenValues, "  ") : value;
 };
 var getSessionFromEvent = (event) => {
@@ -2733,7 +2901,7 @@ var getSessionFromEvent = (event) => {
     return event.sender.session;
   }
 };
-var d8 = debug8("electron-chrome-extensions:router");
+var d9 = debug9("electron-chrome-extensions:router");
 var DEFAULT_SESSION = "_self";
 var gRoutingDelegate;
 var RoutingDelegate = class _RoutingDelegate {
@@ -2741,12 +2909,12 @@ var RoutingDelegate = class _RoutingDelegate {
     this.sessionMap = /* @__PURE__ */ new WeakMap();
     this.workers = /* @__PURE__ */ new WeakSet();
     this.onRouterMessage = async (event, extensionId, handlerName, ...args) => {
-      d8(`received '${handlerName}'`, args);
+      d9(`received '${handlerName}'`, args);
       const observer = this.sessionMap.get(getSessionFromEvent(event));
       return observer?.onExtensionMessage(event, extensionId, handlerName, ...args);
     };
     this.onRemoteMessage = async (event, sessionPartition, handlerName, ...args) => {
-      d8(`received remote '${handlerName}' for '${sessionPartition}'`, args);
+      d9(`received remote '${handlerName}' for '${sessionPartition}'`, args);
       const ses = sessionPartition === DEFAULT_SESSION ? getSessionFromEvent(event) : resolvePartition(sessionPartition);
       const observer = this.sessionMap.get(ses);
       return observer?.onExtensionMessage(event, void 0, handlerName, ...args);
@@ -2775,10 +2943,10 @@ var RoutingDelegate = class _RoutingDelegate {
       };
       return observer?.removeListener(listener, extensionId, eventName);
     };
-    ipcMain.handle("crx-msg", this.onRouterMessage);
-    ipcMain.handle("crx-msg-remote", this.onRemoteMessage);
-    ipcMain.on("crx-add-listener", this.onAddListener);
-    ipcMain.on("crx-remove-listener", this.onRemoveListener);
+    ipcMain2.handle("crx-msg", this.onRouterMessage);
+    ipcMain2.handle("crx-msg-remote", this.onRemoteMessage);
+    ipcMain2.on("crx-add-listener", this.onAddListener);
+    ipcMain2.on("crx-remove-listener", this.onRemoveListener);
   }
   static get() {
     return gRoutingDelegate || (gRoutingDelegate = new _RoutingDelegate());
@@ -2794,7 +2962,7 @@ var RoutingDelegate = class _RoutingDelegate {
         versionId
       );
       if (serviceWorker?.scope?.startsWith("chrome-extension://") && !this.workers.has(serviceWorker)) {
-        d8(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`);
+        d9(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`);
         this.workers.add(serviceWorker);
         serviceWorker.ipc.handle("crx-msg", this.onRouterMessage);
         serviceWorker.ipc.handle("crx-msg-remote", this.onRemoteMessage);
@@ -2838,7 +3006,7 @@ var ExtensionRouter = class {
     });
     app4.on("web-contents-created", (event, webContents2) => {
       if (webContents2.session === this.session && webContents2.getType() === "backgroundPage") {
-        d8(`storing reference to background host [url:'${webContents2.getURL()}']`);
+        d9(`storing reference to background host [url:'${webContents2.getURL()}']`);
         this.extensionHosts.add(webContents2);
       }
     });
@@ -2851,9 +3019,9 @@ var ExtensionRouter = class {
         const { scope } = serviceWorker;
         if (!scope.startsWith("chrome-extension:")) return;
         if (this.extensionHosts.has(serviceWorker)) {
-          d8("%s running status changed to %s", scope, runningStatus);
+          d9("%s running status changed to %s", scope, runningStatus);
         } else {
-          d8(`storing reference to background service worker [url:'${scope}']`);
+          d9(`storing reference to background service worker [url:'${scope}']`);
           this.extensionWorkers.add(serviceWorker);
         }
       }
@@ -2869,15 +3037,15 @@ var ExtensionRouter = class {
         this.listeners.delete(eventName);
       }
       if (delta > 0) {
-        d8(`removed ${delta} listener(s) for '${eventName}'`);
+        d9(`removed ${delta} listener(s) for '${eventName}'`);
       }
     }
   }
   observeListenerHost(host) {
     const hostId = getHostId(host);
-    d8(`observing listener [id:${hostId}, url:'${getHostUrl(host)}']`);
+    d9(`observing listener [id:${hostId}, url:'${getHostUrl(host)}']`);
     host.once("destroyed", () => {
-      d8(`extension host destroyed [id:${hostId}]`);
+      d9(`extension host destroyed [id:${hostId}]`);
       this.filterListeners((listener) => listener.type !== "frame" || listener.host !== host);
     });
   }
@@ -2894,9 +3062,9 @@ var ExtensionRouter = class {
     const eventListeners = listeners.get(eventName);
     const existingEventListener = eventListeners.find(eventListenerEquals(listener));
     if (existingEventListener) {
-      d8(`ignoring existing '${eventName}' event listener for ${extensionId}`);
+      d9(`ignoring existing '${eventName}' event listener for ${extensionId}`);
     } else {
-      d8(`adding '${eventName}' event listener for ${extensionId}`);
+      d9(`adding '${eventName}' event listener for ${extensionId}`);
       eventListeners.push(listener);
       if (listener.type === "frame" && listener.host) {
         this.observeListenerHost(listener.host);
@@ -2912,7 +3080,7 @@ var ExtensionRouter = class {
     }
     const index = eventListeners.findIndex(eventListenerEquals(listener));
     if (index >= 0) {
-      d8(`removing '${eventName}' event listener for ${extensionId}`);
+      d9(`removing '${eventName}' event listener for ${extensionId}`);
       eventListeners.splice(index, 1);
     }
     if (eventListeners.length === 0) {
@@ -2955,7 +3123,7 @@ var ExtensionRouter = class {
     }
     const extEvent = event.type === "frame" ? { type: event.type, sender: event.sender, extension } : { type: event.type, sender: event.serviceWorker, extension };
     const result = await handler.callback(extEvent, ...args);
-    d8(`${handlerName} result: %r`, result);
+    d9(`${handlerName} result: %r`, result);
     return result;
   }
   handle(name, callback, opts) {
@@ -2994,7 +3162,7 @@ var ExtensionRouter = class {
         this.session.serviceWorkers.startWorkerForScope(scope).then((serviceWorker) => {
           serviceWorker.send(ipcName, ...args);
         }).catch((error) => {
-          d8("failed to send %s to %s", eventName, extensionId);
+          d9("failed to send %s to %s", eventName, extensionId);
           console.error(error);
         });
       } else {
@@ -3006,7 +3174,7 @@ var ExtensionRouter = class {
       }
       sentCount++;
     }
-    d8(`sent '${eventName}' event to ${sentCount} listeners`);
+    d9(`sent '${eventName}' event to ${sentCount} listeners`);
   }
   /** Broadcasts extension event to all extension hosts listening for it. */
   broadcastEvent(eventName, ...args) {

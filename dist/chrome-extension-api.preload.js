@@ -513,7 +513,34 @@
                 return port;
               },
               openOptionsPage: invokeExtension2("runtime.openOptionsPage"),
-              sendNativeMessage: invokeExtension2("runtime.sendNativeMessage")
+              sendNativeMessage: invokeExtension2("runtime.sendNativeMessage"),
+              // Custom sendMessage that routes through our IPC
+              sendMessage: function(extensionIdOrMessage, messageOrOptions, optionsOrCallback, callback) {
+                let message;
+                let options;
+                let responseCallback;
+                if (typeof extensionIdOrMessage === "string") {
+                  message = messageOrOptions;
+                  options = typeof optionsOrCallback === "object" ? optionsOrCallback : void 0;
+                  responseCallback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
+                } else {
+                  message = extensionIdOrMessage;
+                  options = typeof messageOrOptions === "object" ? messageOrOptions : void 0;
+                  responseCallback = typeof messageOrOptions === "function" ? messageOrOptions : optionsOrCallback;
+                }
+                console.log("[electron-chrome-extensions] popup runtime.sendMessage:", message);
+                const promise = electron.invokeExtension(extensionId, "runtime.sendMessage", {}, message, options);
+                if (typeof responseCallback === "function") {
+                  promise.then((result) => {
+                    responseCallback(result);
+                  }).catch((e) => {
+                    console.error("[electron-chrome-extensions] sendMessage error:", e);
+                    responseCallback(void 0);
+                  });
+                  return true;
+                }
+                return promise;
+              }
             };
           }
         },
