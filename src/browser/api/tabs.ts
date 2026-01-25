@@ -189,9 +189,12 @@ export class TabsAPI {
   private query(event: ExtensionEvent, info: chrome.tabs.QueryInfo = {}) {
     const isSet = (value: any) => typeof value !== 'undefined'
 
+    d('tabs.query called with:', info, 'lastFocusedWindowId:', this.ctx.store.lastFocusedWindowId, 'total tabs:', this.ctx.store.tabs.size)
+
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.createTabDetails.bind(this))
       .filter((tab) => {
+        d('  checking tab:', tab?.id, 'url:', tab?.url, 'active:', tab?.active, 'windowId:', tab?.windowId)
         if (!tab) return false
         if (isSet(info.active) && info.active !== tab.active) return false
         if (isSet(info.pinned) && info.pinned !== tab.pinned) return false
@@ -240,6 +243,7 @@ export class TabsAPI {
         }
         return tab
       })
+    d('tabs.query result:', filteredTabs.length, 'tabs, first:', filteredTabs[0]?.url)
     return filteredTabs
   }
 
