@@ -431,6 +431,179 @@ function generateSWPolyfill() {
         return onMessageListeners.length > 0;
       }
     };
+
+    // Port-based messaging (runtime.connect / runtime.onConnect)
+    var onConnectListeners = [];
+    var activePorts = {}; // portId -> Port object
+
+    // Port class for SW-side port handling
+    function SWPort(portId, name, sender) {
+      this.name = name || '';
+      this.sender = sender;
+      this._portId = portId;
+      this._connected = true;
+      this._messageListeners = [];
+      this._disconnectListeners = [];
+    }
+
+    SWPort.prototype.postMessage = function(message) {
+      if (!this._connected) return;
+      console.log('[electron-chrome-extensions] SW port.postMessage:', this._portId, message);
+      electron.sendIpc('crx-port-message', this._portId, message);
+    };
+
+    SWPort.prototype.disconnect = function() {
+      if (!this._connected) return;
+      this._connected = false;
+      console.log('[electron-chrome-extensions] SW port.disconnect:', this._portId);
+      electron.sendIpc('crx-port-disconnect', this._portId);
+      delete activePorts[this._portId];
+    };
+
+    SWPort.prototype._receiveMessage = function(message) {
+      for (var i = 0; i < this._messageListeners.length; i++) {
+        try {
+          this._messageListeners[i](message, this);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] port.onMessage error:', e);
+        }
+      }
+    };
+
+    SWPort.prototype._handleDisconnect = function() {
+      this._connected = false;
+      for (var i = 0; i < this._disconnectListeners.length; i++) {
+        try {
+          this._disconnectListeners[i](this);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] port.onDisconnect error:', e);
+        }
+      }
+      delete activePorts[this._portId];
+    };
+
+    SWPort.prototype.onMessage = {
+      addListener: function(callback) {
+        this._messageListeners.push(callback);
+      }.bind(this),
+      removeListener: function(callback) {
+        var idx = this._messageListeners.indexOf(callback);
+        if (idx > -1) this._messageListeners.splice(idx, 1);
+      }.bind(this),
+      hasListener: function(callback) {
+        return this._messageListeners.indexOf(callback) > -1;
+      }.bind(this),
+      hasListeners: function() {
+        return this._messageListeners.length > 0;
+      }.bind(this)
+    };
+
+    SWPort.prototype.onDisconnect = {
+      addListener: function(callback) {
+        this._disconnectListeners.push(callback);
+      }.bind(this),
+      removeListener: function(callback) {
+        var idx = this._disconnectListeners.indexOf(callback);
+        if (idx > -1) this._disconnectListeners.splice(idx, 1);
+      }.bind(this),
+      hasListener: function(callback) {
+        return this._disconnectListeners.indexOf(callback) > -1;
+      }.bind(this),
+      hasListeners: function() {
+        return this._disconnectListeners.length > 0;
+      }.bind(this)
+    };
+
+    // Fix the binding issue - create proper event objects
+    SWPort.prototype._initEvents = function() {
+      var self = this;
+      this.onMessage = {
+        addListener: function(callback) {
+          self._messageListeners.push(callback);
+        },
+        removeListener: function(callback) {
+          var idx = self._messageListeners.indexOf(callback);
+          if (idx > -1) self._messageListeners.splice(idx, 1);
+        },
+        hasListener: function(callback) {
+          return self._messageListeners.indexOf(callback) > -1;
+        },
+        hasListeners: function() {
+          return self._messageListeners.length > 0;
+        }
+      };
+      this.onDisconnect = {
+        addListener: function(callback) {
+          self._disconnectListeners.push(callback);
+        },
+        removeListener: function(callback) {
+          var idx = self._disconnectListeners.indexOf(callback);
+          if (idx > -1) self._disconnectListeners.splice(idx, 1);
+        },
+        hasListener: function(callback) {
+          return self._disconnectListeners.indexOf(callback) > -1;
+        },
+        hasListeners: function() {
+          return self._disconnectListeners.length > 0;
+        }
+      };
+    };
+
+    // Listen for onConnect from main process
+    electron.onIpc('crx-runtime.onConnect', function(portId, name, sender) {
+      console.log('[electron-chrome-extensions] SW received onConnect:', portId, name);
+
+      var port = new SWPort(portId, name, sender);
+      port._initEvents();
+      activePorts[portId] = port;
+
+      // Call all registered onConnect listeners
+      for (var i = 0; i < onConnectListeners.length; i++) {
+        try {
+          onConnectListeners[i](port);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] onConnect listener error:', e);
+        }
+      }
+    });
+
+    // Listen for port messages from main process
+    electron.onIpc('crx-port-message', function(portId, message) {
+      console.log('[electron-chrome-extensions] SW received port message:', portId, message);
+      var port = activePorts[portId];
+      if (port) {
+        port._receiveMessage(message);
+      }
+    });
+
+    // Listen for port disconnects from main process
+    electron.onIpc('crx-port-disconnect', function(portId) {
+      console.log('[electron-chrome-extensions] SW received port disconnect:', portId);
+      var port = activePorts[portId];
+      if (port) {
+        port._handleDisconnect();
+      }
+    });
+
+    // Override onConnect
+    chrome.runtime.onConnect = {
+      addListener: function(callback) {
+        console.log('[electron-chrome-extensions] SW onConnect.addListener called');
+        onConnectListeners.push(callback);
+      },
+      removeListener: function(callback) {
+        var index = onConnectListeners.indexOf(callback);
+        if (index > -1) {
+          onConnectListeners.splice(index, 1);
+        }
+      },
+      hasListener: function(callback) {
+        return onConnectListeners.indexOf(callback) > -1;
+      },
+      hasListeners: function() {
+        return onConnectListeners.length > 0;
+      }
+    };
   }
 
   // chrome.extension
@@ -505,14 +678,18 @@ function generateSWPolyfill() {
   globalThis.browser.i18n = chrome.i18n;
   if (chrome.action) globalThis.browser.action = chrome.action;
   if (chrome.browserAction) globalThis.browser.browserAction = chrome.browserAction;
-  // Keep existing runtime but add our openOptionsPage
+  // Keep existing runtime but add our implementations
   if (!globalThis.browser.runtime) {
     globalThis.browser.runtime = chrome.runtime;
-  } else if (!globalThis.browser.runtime.openOptionsPage) {
-    globalThis.browser.runtime.openOptionsPage = chrome.runtime.openOptionsPage;
+  } else {
+    // Always update these to use our implementations
+    if (chrome.runtime.openOptionsPage) globalThis.browser.runtime.openOptionsPage = chrome.runtime.openOptionsPage;
+    if (chrome.runtime.sendMessage) globalThis.browser.runtime.sendMessage = chrome.runtime.sendMessage;
+    if (chrome.runtime.onMessage) globalThis.browser.runtime.onMessage = chrome.runtime.onMessage;
+    if (chrome.runtime.onConnect) globalThis.browser.runtime.onConnect = chrome.runtime.onConnect;
   }
 
-  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand);
+  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand, 'onConnect:', !!chrome.runtime.onConnect);
 
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code
@@ -2608,6 +2785,9 @@ var NativeMessagingHost = class {
 // src/browser/api/runtime.ts
 var import_debug8 = __toESM(require("debug"));
 var d8 = (0, import_debug8.default)("electron-chrome-extensions:runtime");
+function isWebContents(sender) {
+  return "isDestroyed" in sender && typeof sender.isDestroyed === "function";
+}
 var RuntimeAPI = class extends import_node_events3.EventEmitter {
   constructor(ctx) {
     super();
@@ -2615,6 +2795,8 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
     this.hostMap = {};
     // Pending message responses: messageId -> { resolve, reject, timeout }
     this.pendingResponses = /* @__PURE__ */ new Map();
+    // Active port connections: portId -> PortConnection
+    this.ports = /* @__PURE__ */ new Map();
     this.sendMessage = async (event, message, options) => {
       const extensionId = event.extension.id;
       const messageId = (0, import_node_crypto.randomUUID)();
@@ -2684,13 +2866,68 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
         await this.ctx.store.createTab({ url, active: true });
       }
     };
+    this.connect = async (event, portId, connectInfo) => {
+      const extensionId = event.extension.id;
+      const portName = connectInfo?.name || "";
+      console.log("[crx-runtime] connect from", extensionId, "portId:", portId, "name:", portName);
+      const sender = {
+        id: extensionId,
+        url: event.type === "frame" ? event.sender.getURL() : `chrome-extension://${extensionId}/`
+      };
+      if (event.type === "frame") {
+        const tab = this.ctx.store.getTabById(event.sender.id);
+        if (tab) {
+          const tabDetails = this.ctx.store.tabDetailsCache.get(tab.id);
+          if (tabDetails) {
+            sender.tab = tabDetails;
+          }
+        }
+      }
+      this.ports.set(portId, {
+        portId,
+        extensionId,
+        name: portName,
+        senderWebContents: event.sender,
+        senderUrl: sender.url || "",
+        serviceWorker: void 0
+        // Will be set if SW is used
+      });
+      console.log("[crx-runtime] Port stored:", portId);
+      const scope = `chrome-extension://${extensionId}/`;
+      try {
+        console.log("[crx-runtime] Trying SW for scope:", scope);
+        const serviceWorker = await this.ctx.session.serviceWorkers.startWorkerForScope(scope);
+        console.log("[crx-runtime] SW started, sending onConnect");
+        const port = this.ports.get(portId);
+        if (port) {
+          port.serviceWorker = serviceWorker;
+        }
+        serviceWorker.send("crx-runtime.onConnect", portId, portName, sender);
+        console.log("[crx-runtime] onConnect sent to SW");
+      } catch (error) {
+        console.log("[crx-runtime] SW failed, trying background page:", error);
+        const bgPage = this.findBackgroundPage(extensionId);
+        if (bgPage) {
+          console.log("[crx-runtime] Found background page, sending onConnect directly");
+          if (this.safeSend(bgPage, "crx-runtime.onConnect", portId, portName, sender)) {
+            console.log("[crx-runtime] onConnect sent to background page");
+          } else {
+            console.log("[crx-runtime] Failed to send onConnect to background page");
+          }
+        } else {
+          console.log("[crx-runtime] No background page found for extension:", extensionId);
+        }
+      }
+    };
     const handle = this.ctx.router.apiHandler();
     handle("runtime.connectNative", this.connectNative, { permission: "nativeMessaging" });
     handle("runtime.disconnectNative", this.disconnectNative, { permission: "nativeMessaging" });
     handle("runtime.openOptionsPage", this.openOptionsPage);
     handle("runtime.sendNativeMessage", this.sendNativeMessage, { permission: "nativeMessaging" });
     handle("runtime.sendMessage", this.sendMessage.bind(this));
+    handle("runtime.connect", this.connect.bind(this));
     this.setupResponseHandler();
+    this.setupPortHandlers();
   }
   setupResponseHandler() {
     const handler = (_event, messageId, response) => {
@@ -2710,6 +2947,134 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
         sw.ipc.on("crx-runtime-response", handler);
       }
     });
+  }
+  setupPortHandlers() {
+    import_electron8.ipcMain.on("crx-port-msg", (event, extensionId, portId, message) => {
+      console.log("[crx-runtime] Port message from popup:", portId, message);
+      const port = this.ports.get(portId);
+      if (!port) {
+        console.log("[crx-runtime] Port message for unknown port:", portId, "known ports:", Array.from(this.ports.keys()));
+        return;
+      }
+      if (port.serviceWorker) {
+        console.log("[crx-runtime] Forwarding to SW:", portId);
+        port.serviceWorker.send("crx-port-message", portId, message);
+      } else {
+        console.log("[crx-runtime] Forwarding to background page:", portId);
+        const bgPage = this.findBackgroundPage(port.extensionId);
+        if (bgPage) {
+          if (!this.safeSend(bgPage, "crx-runtime.port-message", portId, message)) {
+            console.log("[crx-runtime] Failed to forward port message to background page");
+          }
+        } else {
+          console.log("[crx-runtime] No background page found for port message");
+        }
+      }
+    });
+    import_electron8.ipcMain.on("crx-port-disconnect", (event, extensionId, portId) => {
+      const port = this.ports.get(portId);
+      if (!port) return;
+      console.log("[crx-runtime] Port disconnect from popup:", portId);
+      if (port.serviceWorker) {
+        port.serviceWorker.send("crx-port-disconnect", portId);
+      } else {
+        const bgPage = this.findBackgroundPage(port.extensionId);
+        if (bgPage) {
+          this.safeSend(bgPage, "crx-runtime.port-disconnect", portId);
+        }
+      }
+      this.ports.delete(portId);
+    });
+    import_electron8.ipcMain.on("crx-port-message-to-popup", (event, portId, message) => {
+      console.log("[crx-runtime] Port message from background to popup:", portId, message);
+      const port = this.ports.get(portId);
+      if (!port) {
+        console.log("[crx-runtime] Unknown port for bg->popup message:", portId);
+        return;
+      }
+      if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+        console.log("[crx-runtime] Forwarding bg message to popup:", portId);
+        port.senderWebContents.send(`crx-port-msg-${portId}`, message);
+      }
+    });
+    import_electron8.ipcMain.on("crx-port-disconnect-from-bg", (event, portId) => {
+      console.log("[crx-runtime] Port disconnect from background:", portId);
+      const port = this.ports.get(portId);
+      if (!port) return;
+      if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+        port.senderWebContents.send(`crx-port-disconnect-${portId}`);
+      }
+      this.ports.delete(portId);
+    });
+    this.ctx.session.serviceWorkers.on("running-status-changed", ({ runningStatus, versionId }) => {
+      if (runningStatus !== "starting") return;
+      const sw = this.ctx.session.serviceWorkers.getWorkerFromVersionID(versionId);
+      if (sw?.scope?.startsWith("chrome-extension://")) {
+        console.log("[crx-runtime] Setting up SW IPC listeners for scope:", sw.scope);
+        sw.ipc.on("crx-port-message", (_event, portId, message) => {
+          console.log("[crx-runtime] Port message from SW:", portId, message);
+          const port = this.ports.get(portId);
+          if (!port) {
+            console.log("[crx-runtime] Unknown port from SW:", portId);
+            return;
+          }
+          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+            console.log("[crx-runtime] Forwarding to popup:", portId);
+            port.senderWebContents.send(`crx-port-msg-${portId}`, message);
+          } else {
+            console.log("[crx-runtime] Cannot forward - sender not WebContents or destroyed");
+          }
+        });
+        sw.ipc.on("crx-port-disconnect", (_event, portId) => {
+          console.log("[crx-runtime] Port disconnect from SW:", portId);
+          const port = this.ports.get(portId);
+          if (!port) return;
+          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+            port.senderWebContents.send(`crx-port-disconnect-${portId}`);
+          }
+          this.ports.delete(portId);
+        });
+      }
+    });
+  }
+  // Find the background page webContents for an extension
+  findBackgroundPage(extensionId) {
+    const { webContents: webContents2 } = require("electron");
+    const allWebContents = webContents2.getAllWebContents();
+    for (const wc of allWebContents) {
+      if (wc.isDestroyed()) continue;
+      if (wc.getType() !== "backgroundPage") continue;
+      if (wc.session !== this.ctx.session) continue;
+      const url = wc.getURL();
+      if (url.startsWith(`chrome-extension://${extensionId}/`)) {
+        try {
+          const frame = wc.mainFrame;
+          if (!frame) {
+            console.log("[crx-runtime] Background page has no mainFrame:", extensionId);
+            continue;
+          }
+          return wc;
+        } catch (e) {
+          console.log("[crx-runtime] Background page frame not accessible:", extensionId, e);
+          continue;
+        }
+      }
+    }
+    return void 0;
+  }
+  // Safely send IPC to a webContents, returning true if successful
+  safeSend(wc, channel, ...args) {
+    try {
+      if (wc.isDestroyed()) {
+        console.log("[crx-runtime] Cannot send - webContents destroyed");
+        return false;
+      }
+      wc.send(channel, ...args);
+      return true;
+    } catch (e) {
+      console.log("[crx-runtime] Error sending to webContents:", e);
+      return false;
+    }
   }
 };
 
@@ -3129,6 +3494,7 @@ var ExtensionRouter = class {
   }
   addListener(listener, extensionId, eventName) {
     const { listeners, session: session2 } = this;
+    console.log("[router] addListener called:", eventName, "extensionId:", extensionId, "type:", listener.type);
     const sessionExtensions = session2.extensions || session2;
     const extension = sessionExtensions.getExtension(extensionId);
     if (!extension) {
@@ -3141,8 +3507,10 @@ var ExtensionRouter = class {
     const existingEventListener = eventListeners.find(eventListenerEquals(listener));
     if (existingEventListener) {
       d9(`ignoring existing '${eventName}' event listener for ${extensionId}`);
+      console.log("[router] Ignoring existing listener for:", eventName);
     } else {
       d9(`adding '${eventName}' event listener for ${extensionId}`);
+      console.log("[router] Added listener for:", eventName, "total listeners:", eventListeners.length + 1);
       eventListeners.push(listener);
       if (listener.type === "frame" && listener.host) {
         this.observeListenerHost(listener.host);
@@ -3226,7 +3594,10 @@ var ExtensionRouter = class {
     const { listeners } = this;
     let eventListeners = listeners.get(eventName);
     const ipcName = `crx-${eventName}`;
+    console.log("[router] sendEvent:", eventName, "target:", targetExtensionId, "listeners:", eventListeners?.length || 0);
+    console.log("[router] All registered events:", Array.from(listeners.keys()));
     if (!eventListeners || eventListeners.length === 0) {
+      console.log("[router] No listeners for event:", eventName);
       return;
     }
     let sentCount = 0;

@@ -393,6 +393,179 @@ export function generateSWPolyfill(): string {
         return onMessageListeners.length > 0;
       }
     };
+
+    // Port-based messaging (runtime.connect / runtime.onConnect)
+    var onConnectListeners = [];
+    var activePorts = {}; // portId -> Port object
+
+    // Port class for SW-side port handling
+    function SWPort(portId, name, sender) {
+      this.name = name || '';
+      this.sender = sender;
+      this._portId = portId;
+      this._connected = true;
+      this._messageListeners = [];
+      this._disconnectListeners = [];
+    }
+
+    SWPort.prototype.postMessage = function(message) {
+      if (!this._connected) return;
+      console.log('[electron-chrome-extensions] SW port.postMessage:', this._portId, message);
+      electron.sendIpc('crx-port-message', this._portId, message);
+    };
+
+    SWPort.prototype.disconnect = function() {
+      if (!this._connected) return;
+      this._connected = false;
+      console.log('[electron-chrome-extensions] SW port.disconnect:', this._portId);
+      electron.sendIpc('crx-port-disconnect', this._portId);
+      delete activePorts[this._portId];
+    };
+
+    SWPort.prototype._receiveMessage = function(message) {
+      for (var i = 0; i < this._messageListeners.length; i++) {
+        try {
+          this._messageListeners[i](message, this);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] port.onMessage error:', e);
+        }
+      }
+    };
+
+    SWPort.prototype._handleDisconnect = function() {
+      this._connected = false;
+      for (var i = 0; i < this._disconnectListeners.length; i++) {
+        try {
+          this._disconnectListeners[i](this);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] port.onDisconnect error:', e);
+        }
+      }
+      delete activePorts[this._portId];
+    };
+
+    SWPort.prototype.onMessage = {
+      addListener: function(callback) {
+        this._messageListeners.push(callback);
+      }.bind(this),
+      removeListener: function(callback) {
+        var idx = this._messageListeners.indexOf(callback);
+        if (idx > -1) this._messageListeners.splice(idx, 1);
+      }.bind(this),
+      hasListener: function(callback) {
+        return this._messageListeners.indexOf(callback) > -1;
+      }.bind(this),
+      hasListeners: function() {
+        return this._messageListeners.length > 0;
+      }.bind(this)
+    };
+
+    SWPort.prototype.onDisconnect = {
+      addListener: function(callback) {
+        this._disconnectListeners.push(callback);
+      }.bind(this),
+      removeListener: function(callback) {
+        var idx = this._disconnectListeners.indexOf(callback);
+        if (idx > -1) this._disconnectListeners.splice(idx, 1);
+      }.bind(this),
+      hasListener: function(callback) {
+        return this._disconnectListeners.indexOf(callback) > -1;
+      }.bind(this),
+      hasListeners: function() {
+        return this._disconnectListeners.length > 0;
+      }.bind(this)
+    };
+
+    // Fix the binding issue - create proper event objects
+    SWPort.prototype._initEvents = function() {
+      var self = this;
+      this.onMessage = {
+        addListener: function(callback) {
+          self._messageListeners.push(callback);
+        },
+        removeListener: function(callback) {
+          var idx = self._messageListeners.indexOf(callback);
+          if (idx > -1) self._messageListeners.splice(idx, 1);
+        },
+        hasListener: function(callback) {
+          return self._messageListeners.indexOf(callback) > -1;
+        },
+        hasListeners: function() {
+          return self._messageListeners.length > 0;
+        }
+      };
+      this.onDisconnect = {
+        addListener: function(callback) {
+          self._disconnectListeners.push(callback);
+        },
+        removeListener: function(callback) {
+          var idx = self._disconnectListeners.indexOf(callback);
+          if (idx > -1) self._disconnectListeners.splice(idx, 1);
+        },
+        hasListener: function(callback) {
+          return self._disconnectListeners.indexOf(callback) > -1;
+        },
+        hasListeners: function() {
+          return self._disconnectListeners.length > 0;
+        }
+      };
+    };
+
+    // Listen for onConnect from main process
+    electron.onIpc('crx-runtime.onConnect', function(portId, name, sender) {
+      console.log('[electron-chrome-extensions] SW received onConnect:', portId, name);
+
+      var port = new SWPort(portId, name, sender);
+      port._initEvents();
+      activePorts[portId] = port;
+
+      // Call all registered onConnect listeners
+      for (var i = 0; i < onConnectListeners.length; i++) {
+        try {
+          onConnectListeners[i](port);
+        } catch (e) {
+          console.error('[electron-chrome-extensions] onConnect listener error:', e);
+        }
+      }
+    });
+
+    // Listen for port messages from main process
+    electron.onIpc('crx-port-message', function(portId, message) {
+      console.log('[electron-chrome-extensions] SW received port message:', portId, message);
+      var port = activePorts[portId];
+      if (port) {
+        port._receiveMessage(message);
+      }
+    });
+
+    // Listen for port disconnects from main process
+    electron.onIpc('crx-port-disconnect', function(portId) {
+      console.log('[electron-chrome-extensions] SW received port disconnect:', portId);
+      var port = activePorts[portId];
+      if (port) {
+        port._handleDisconnect();
+      }
+    });
+
+    // Override onConnect
+    chrome.runtime.onConnect = {
+      addListener: function(callback) {
+        console.log('[electron-chrome-extensions] SW onConnect.addListener called');
+        onConnectListeners.push(callback);
+      },
+      removeListener: function(callback) {
+        var index = onConnectListeners.indexOf(callback);
+        if (index > -1) {
+          onConnectListeners.splice(index, 1);
+        }
+      },
+      hasListener: function(callback) {
+        return onConnectListeners.indexOf(callback) > -1;
+      },
+      hasListeners: function() {
+        return onConnectListeners.length > 0;
+      }
+    };
   }
 
   // chrome.extension
@@ -467,14 +640,18 @@ export function generateSWPolyfill(): string {
   globalThis.browser.i18n = chrome.i18n;
   if (chrome.action) globalThis.browser.action = chrome.action;
   if (chrome.browserAction) globalThis.browser.browserAction = chrome.browserAction;
-  // Keep existing runtime but add our openOptionsPage
+  // Keep existing runtime but add our implementations
   if (!globalThis.browser.runtime) {
     globalThis.browser.runtime = chrome.runtime;
-  } else if (!globalThis.browser.runtime.openOptionsPage) {
-    globalThis.browser.runtime.openOptionsPage = chrome.runtime.openOptionsPage;
+  } else {
+    // Always update these to use our implementations
+    if (chrome.runtime.openOptionsPage) globalThis.browser.runtime.openOptionsPage = chrome.runtime.openOptionsPage;
+    if (chrome.runtime.sendMessage) globalThis.browser.runtime.sendMessage = chrome.runtime.sendMessage;
+    if (chrome.runtime.onMessage) globalThis.browser.runtime.onMessage = chrome.runtime.onMessage;
+    if (chrome.runtime.onConnect) globalThis.browser.runtime.onConnect = chrome.runtime.onConnect;
   }
 
-  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand);
+  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand, 'onConnect:', !!chrome.runtime.onConnect);
 
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code

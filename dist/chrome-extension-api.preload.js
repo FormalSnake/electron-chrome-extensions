@@ -98,6 +98,34 @@
     const onIpc = (channel, callback) => {
       import_electron2.ipcRenderer.on(channel, (_event, ...args) => callback(...args));
     };
+    const offIpc = (channel, callback) => {
+      if (callback) {
+        import_electron2.ipcRenderer.off(channel, callback);
+      } else {
+        import_electron2.ipcRenderer.removeAllListeners(channel);
+      }
+    };
+    const connectPort = (extensionId, connectInfo, onMessage, onDisconnect, callback) => {
+      const portId = process.type === "service-worker" ? __require("node:crypto").randomUUID() : import_electron2.contextBridge.executeInMainWorld({
+        func: () => crypto.randomUUID()
+      });
+      const messageHandler = (_event, msg) => {
+        onMessage(msg);
+      };
+      import_electron2.ipcRenderer.on(`crx-port-msg-${portId}`, messageHandler);
+      import_electron2.ipcRenderer.once(`crx-port-disconnect-${portId}`, () => {
+        import_electron2.ipcRenderer.off(`crx-port-msg-${portId}`, messageHandler);
+        onDisconnect();
+      });
+      invokeExtension(extensionId, "runtime.connect", {}, portId, connectInfo);
+      callback(portId);
+    };
+    const sendPortMessage = (extensionId, portId, message) => {
+      import_electron2.ipcRenderer.send("crx-port-msg", extensionId, portId, message);
+    };
+    const disconnectPort = (extensionId, portId) => {
+      import_electron2.ipcRenderer.send("crx-port-disconnect", extensionId, portId);
+    };
     const electronContext = {
       invokeExtension,
       addExtensionListener,
@@ -105,7 +133,11 @@
       connectNative,
       disconnectNative,
       sendIpc,
-      onIpc
+      onIpc,
+      offIpc,
+      connectPort,
+      sendPortMessage,
+      disconnectPort
     };
     function mainWorldScript() {
       console.log("[electron-chrome-extensions] mainWorldScript running in:", location.href);
@@ -289,6 +321,154 @@
           }
         }
       }
+      class RuntimePort {
+        constructor(name) {
+          this.portId = "";
+          this.connected = false;
+          this.pending = [];
+          this._init = (portId) => {
+            this.connected = true;
+            this.portId = portId;
+            this.pending.forEach((msg) => this.postMessage(msg));
+            this.pending = [];
+            Object.defineProperty(this, "_init", { value: void 0 });
+          };
+          this.onMessage = new Event();
+          this.onDisconnect = new Event();
+          this.name = name || "";
+        }
+        _receive(message) {
+          ;
+          this.onMessage._emit(message, this);
+        }
+        _disconnect() {
+          if (this.connected) {
+            this.connected = false;
+            this.onDisconnect._emit(this);
+          }
+        }
+        postMessage(message) {
+          if (!this.connected) {
+            this.pending.push(message);
+            return;
+          }
+          electron.sendPortMessage(extensionId, this.portId, message);
+        }
+        disconnect() {
+          if (this.connected) {
+            electron.disconnectPort(extensionId, this.portId);
+            this._disconnect();
+          }
+        }
+      }
+      class BackgroundPort {
+        constructor(portId, name, sender) {
+          this.portId = portId;
+          this.connected = true;
+          this.onMessage = new Event();
+          this.onDisconnect = new Event();
+          this.name = name || "";
+          this.sender = sender;
+        }
+        _receive(message) {
+          ;
+          this.onMessage._emit(message, this);
+        }
+        _disconnect() {
+          if (this.connected) {
+            this.connected = false;
+            this.onDisconnect._emit(this);
+          }
+        }
+        postMessage(message) {
+          if (!this.connected) return;
+          electron.sendIpc("crx-port-message-to-popup", this.portId, message);
+        }
+        disconnect() {
+          if (this.connected) {
+            this.connected = false;
+            electron.sendIpc("crx-port-disconnect-from-bg", this.portId);
+            this.onDisconnect._emit(this);
+          }
+        }
+      }
+      const backgroundPorts = /* @__PURE__ */ new Map();
+      const isBackgroundPage = (() => {
+        if (!extensionId) return false;
+        const background = manifest.background;
+        const bgPage = background?.page;
+        if (bgPage) {
+          const bgUrl = `chrome-extension://${extensionId}/${bgPage}`;
+          return location.href === bgUrl || location.href.startsWith(bgUrl + "?");
+        }
+        const bgScripts = background?.scripts;
+        if (bgScripts && bgScripts.length > 0) {
+          return location.href.includes("_generated_background_page.html");
+        }
+        return false;
+      })();
+      console.log("[electron-chrome-extensions] Context check - isBackgroundPage:", isBackgroundPage, "url:", location.href);
+      class OnConnectEvent {
+        constructor() {
+          this.listeners = [];
+          this.initialized = false;
+          if (isBackgroundPage) {
+            this.initializeListeners();
+          }
+        }
+        initializeListeners() {
+          if (this.initialized) return;
+          this.initialized = true;
+          console.log("[electron-chrome-extensions] Initializing onConnect listeners for background page");
+          electron.addExtensionListener(extensionId, "runtime.onConnect", (portId, name, sender) => {
+            console.log("[electron-chrome-extensions] Background received onConnect:", portId, name);
+            const port = new BackgroundPort(portId, name, sender);
+            backgroundPorts.set(portId, port);
+            this.listeners.forEach((listener) => {
+              try {
+                listener(port);
+              } catch (e) {
+                console.error("[electron-chrome-extensions] onConnect listener error:", e);
+              }
+            });
+          });
+          electron.addExtensionListener(extensionId, "runtime.port-message", (portId, message) => {
+            console.log("[electron-chrome-extensions] Background received port message:", portId, message);
+            const port = backgroundPorts.get(portId);
+            if (port) {
+              port._receive(message);
+            }
+          });
+          electron.addExtensionListener(extensionId, "runtime.port-disconnect", (portId) => {
+            console.log("[electron-chrome-extensions] Background received port disconnect:", portId);
+            const port = backgroundPorts.get(portId);
+            if (port) {
+              port._disconnect();
+              backgroundPorts.delete(portId);
+            }
+          });
+        }
+        addListener(callback) {
+          console.log("[electron-chrome-extensions] onConnect.addListener called, isBackgroundPage:", isBackgroundPage);
+          this.listeners.push(callback);
+          if (isBackgroundPage && !this.initialized) {
+            this.initializeListeners();
+          }
+        }
+        removeListener(callback) {
+          const index = this.listeners.indexOf(callback);
+          if (index > -1) {
+            this.listeners.splice(index, 1);
+          }
+        }
+        hasListener(callback) {
+          return this.listeners.indexOf(callback) > -1;
+        }
+        hasListeners() {
+          return this.listeners.length > 0;
+        }
+      }
+      const onConnectEvent = new OnConnectEvent();
       const browserActionFactory = (base) => {
         const api = {
           ...base,
@@ -523,6 +703,32 @@
               },
               openOptionsPage: invokeExtension2("runtime.openOptionsPage"),
               sendNativeMessage: invokeExtension2("runtime.sendNativeMessage"),
+              // Port-based messaging via runtime.connect
+              connect: (extensionIdOrConnectInfo, connectInfo) => {
+                let targetExtensionId;
+                let info;
+                if (typeof extensionIdOrConnectInfo === "string") {
+                  targetExtensionId = extensionIdOrConnectInfo;
+                  info = connectInfo;
+                } else if (extensionIdOrConnectInfo && typeof extensionIdOrConnectInfo === "object") {
+                  info = extensionIdOrConnectInfo;
+                }
+                const port = new RuntimePort(info?.name);
+                const receive = port._receive.bind(port);
+                const disconnect = port._disconnect.bind(port);
+                console.log("[electron-chrome-extensions] runtime.connect called, name:", info?.name);
+                electron.connectPort(
+                  targetExtensionId || extensionId,
+                  info,
+                  receive,
+                  disconnect,
+                  (portId) => {
+                    port._init(portId);
+                  }
+                );
+                return port;
+              },
+              onConnect: onConnectEvent,
               // Custom sendMessage that routes through our IPC
               sendMessage: function(extensionIdOrMessage, messageOrOptions, optionsOrCallback, callback) {
                 let message;
@@ -551,10 +757,12 @@
                 return promise;
               }
             };
-            console.log("[electron-chrome-extensions] runtime factory result, sendMessage:", typeof runtimeApi.sendMessage);
+            console.log("[electron-chrome-extensions] runtime factory result, sendMessage:", typeof runtimeApi.sendMessage, "connect:", typeof runtimeApi.connect);
             if (globalThis.browser?.runtime) {
-              console.log("[electron-chrome-extensions] Patching browser.runtime.sendMessage");
+              console.log("[electron-chrome-extensions] Patching browser.runtime.sendMessage and connect");
               globalThis.browser.runtime.sendMessage = runtimeApi.sendMessage;
+              globalThis.browser.runtime.connect = runtimeApi.connect;
+              globalThis.browser.runtime.onConnect = runtimeApi.onConnect;
             }
             return runtimeApi;
           }

@@ -93,6 +93,56 @@ export const injectExtensionAPIs = () => {
     ipcRenderer.on(channel, (_event, ...args) => callback(...args))
   }
 
+  // Remove IPC listener
+  const offIpc = (channel: string, callback?: (...args: any[]) => void) => {
+    if (callback) {
+      ipcRenderer.off(channel, callback)
+    } else {
+      ipcRenderer.removeAllListeners(channel)
+    }
+  }
+
+  // Port-based messaging for runtime.connect
+  const connectPort = (
+    extensionId: string,
+    connectInfo: { name?: string } | undefined,
+    onMessage: (message: any) => void,
+    onDisconnect: () => void,
+    callback: (portId: string) => void
+  ) => {
+    // Generate port ID
+    const portId = process.type === 'service-worker'
+      ? require('node:crypto').randomUUID()
+      : (contextBridge as any).executeInMainWorld({
+          func: () => crypto.randomUUID()
+        })
+
+    // Set up message listener for this port
+    const messageHandler = (_event: Electron.IpcRendererEvent, msg: any) => {
+      onMessage(msg)
+    }
+    ipcRenderer.on(`crx-port-msg-${portId}`, messageHandler)
+
+    // Set up disconnect listener
+    ipcRenderer.once(`crx-port-disconnect-${portId}`, () => {
+      ipcRenderer.off(`crx-port-msg-${portId}`, messageHandler)
+      onDisconnect()
+    })
+
+    // Invoke the connect handler
+    invokeExtension(extensionId, 'runtime.connect', {}, portId, connectInfo)
+
+    callback(portId)
+  }
+
+  const sendPortMessage = (extensionId: string, portId: string, message: any) => {
+    ipcRenderer.send('crx-port-msg', extensionId, portId, message)
+  }
+
+  const disconnectPort = (extensionId: string, portId: string) => {
+    ipcRenderer.send('crx-port-disconnect', extensionId, portId)
+  }
+
   const electronContext = {
     invokeExtension,
     addExtensionListener,
@@ -100,7 +150,11 @@ export const injectExtensionAPIs = () => {
     connectNative,
     disconnectNative,
     sendIpc,
-    onIpc
+    onIpc,
+    offIpc,
+    connectPort,
+    sendPortMessage,
+    disconnectPort
   }
 
   // Function body to run in the main world.
@@ -295,6 +349,212 @@ export const injectExtensionAPIs = () => {
       onMessage: chrome.runtime.PortMessageEvent = new Event() as any
       onDisconnect: chrome.runtime.PortDisconnectEvent = new Event() as any
     }
+
+    // Port for runtime.connect() - popup/content script side (sender)
+    class RuntimePort implements chrome.runtime.Port {
+      private portId: string = ''
+      private connected = false
+      private pending: any[] = []
+
+      name: string
+
+      constructor(name?: string) {
+        this.name = name || ''
+      }
+
+      _init = (portId: string) => {
+        this.connected = true
+        this.portId = portId
+
+        this.pending.forEach((msg) => this.postMessage(msg))
+        this.pending = []
+
+        Object.defineProperty(this, '_init', { value: undefined })
+      }
+
+      _receive(message: any) {
+        ;(this.onMessage as any)._emit(message, this)
+      }
+
+      _disconnect() {
+        if (this.connected) {
+          this.connected = false
+          ;(this.onDisconnect as any)._emit(this)
+        }
+      }
+
+      postMessage(message: any) {
+        if (!this.connected) {
+          this.pending.push(message)
+          return
+        }
+        electron.sendPortMessage(extensionId, this.portId, message)
+      }
+
+      disconnect() {
+        if (this.connected) {
+          electron.disconnectPort(extensionId, this.portId)
+          this._disconnect()
+        }
+      }
+
+      onMessage: chrome.runtime.PortMessageEvent = new Event() as any
+      onDisconnect: chrome.runtime.PortDisconnectEvent = new Event() as any
+    }
+
+    // Port for background page side (receiver) - receives connections from popup/content scripts
+    class BackgroundPort implements chrome.runtime.Port {
+      private connected = true
+
+      name: string
+      sender?: chrome.runtime.MessageSender
+
+      constructor(private portId: string, name: string, sender: chrome.runtime.MessageSender) {
+        this.name = name || ''
+        this.sender = sender
+      }
+
+      _receive(message: any) {
+        ;(this.onMessage as any)._emit(message, this)
+      }
+
+      _disconnect() {
+        if (this.connected) {
+          this.connected = false
+          ;(this.onDisconnect as any)._emit(this)
+        }
+      }
+
+      postMessage(message: any) {
+        if (!this.connected) return
+        // Send message back to the popup/content script via IPC
+        electron.sendIpc('crx-port-message-to-popup', this.portId, message)
+      }
+
+      disconnect() {
+        if (this.connected) {
+          this.connected = false
+          electron.sendIpc('crx-port-disconnect-from-bg', this.portId)
+          ;(this.onDisconnect as any)._emit(this)
+        }
+      }
+
+      onMessage: chrome.runtime.PortMessageEvent = new Event() as any
+      onDisconnect: chrome.runtime.PortDisconnectEvent = new Event() as any
+    }
+
+    // Track background ports for message routing
+    const backgroundPorts: Map<string, BackgroundPort> = new Map()
+
+    // Check if current context is a background page
+    const isBackgroundPage = (() => {
+      if (!extensionId) return false
+
+      // Cast to any to handle both MV2 and MV3 manifest types
+      const background = manifest.background as any
+
+      // Check MV2 background page path
+      const bgPage = background?.page as string | undefined
+      if (bgPage) {
+        const bgUrl = `chrome-extension://${extensionId}/${bgPage}`
+        return location.href === bgUrl || location.href.startsWith(bgUrl + '?')
+      }
+
+      // Check if background scripts are specified (generated background page)
+      const bgScripts = background?.scripts as string[] | undefined
+      if (bgScripts && bgScripts.length > 0) {
+        // Generated background pages have URLs like chrome-extension://id/_generated_background_page.html
+        return location.href.includes('_generated_background_page.html')
+      }
+
+      return false
+    })()
+
+    console.log('[electron-chrome-extensions] Context check - isBackgroundPage:', isBackgroundPage, 'url:', location.href)
+
+    // Custom onConnect event that creates proper Port objects
+    class OnConnectEvent {
+      private listeners: ((port: chrome.runtime.Port) => void)[] = []
+      private initialized = false
+
+      constructor() {
+        // Only register IPC listeners in background page context
+        // This prevents popups from receiving onConnect events meant for background
+        if (isBackgroundPage) {
+          this.initializeListeners()
+        }
+      }
+
+      private initializeListeners() {
+        if (this.initialized) return
+        this.initialized = true
+
+        console.log('[electron-chrome-extensions] Initializing onConnect listeners for background page')
+
+        // Listen for onConnect events from main process
+        electron.addExtensionListener(extensionId, 'runtime.onConnect', (portId: string, name: string, sender: any) => {
+          console.log('[electron-chrome-extensions] Background received onConnect:', portId, name)
+          const port = new BackgroundPort(portId, name, sender)
+          backgroundPorts.set(portId, port)
+
+          // Call all registered listeners
+          this.listeners.forEach(listener => {
+            try {
+              listener(port)
+            } catch (e) {
+              console.error('[electron-chrome-extensions] onConnect listener error:', e)
+            }
+          })
+        })
+
+        // Listen for port messages from main process
+        electron.addExtensionListener(extensionId, 'runtime.port-message', (portId: string, message: any) => {
+          console.log('[electron-chrome-extensions] Background received port message:', portId, message)
+          const port = backgroundPorts.get(portId)
+          if (port) {
+            port._receive(message)
+          }
+        })
+
+        // Listen for port disconnects
+        electron.addExtensionListener(extensionId, 'runtime.port-disconnect', (portId: string) => {
+          console.log('[electron-chrome-extensions] Background received port disconnect:', portId)
+          const port = backgroundPorts.get(portId)
+          if (port) {
+            port._disconnect()
+            backgroundPorts.delete(portId)
+          }
+        })
+      }
+
+      addListener(callback: (port: chrome.runtime.Port) => void) {
+        console.log('[electron-chrome-extensions] onConnect.addListener called, isBackgroundPage:', isBackgroundPage)
+        this.listeners.push(callback)
+
+        // If addListener is called in background page but we haven't initialized yet, do it now
+        if (isBackgroundPage && !this.initialized) {
+          this.initializeListeners()
+        }
+      }
+
+      removeListener(callback: (port: chrome.runtime.Port) => void) {
+        const index = this.listeners.indexOf(callback)
+        if (index > -1) {
+          this.listeners.splice(index, 1)
+        }
+      }
+
+      hasListener(callback: (port: chrome.runtime.Port) => void): boolean {
+        return this.listeners.indexOf(callback) > -1
+      }
+
+      hasListeners(): boolean {
+        return this.listeners.length > 0
+      }
+    }
+
+    // Create singleton onConnect event
+    const onConnectEvent = new OnConnectEvent()
 
     type DeepPartial<T> = {
       [P in keyof T]?: DeepPartial<T[P]>
@@ -584,6 +844,40 @@ export const injectExtensionAPIs = () => {
             },
             openOptionsPage: invokeExtension('runtime.openOptionsPage'),
             sendNativeMessage: invokeExtension('runtime.sendNativeMessage'),
+            // Port-based messaging via runtime.connect
+            connect: (extensionIdOrConnectInfo?: any, connectInfo?: { name?: string }) => {
+              // Handle overloaded signatures
+              let targetExtensionId: string | undefined
+              let info: { name?: string } | undefined
+
+              if (typeof extensionIdOrConnectInfo === 'string') {
+                // connect(extensionId, connectInfo?)
+                targetExtensionId = extensionIdOrConnectInfo
+                info = connectInfo
+              } else if (extensionIdOrConnectInfo && typeof extensionIdOrConnectInfo === 'object') {
+                // connect(connectInfo)
+                info = extensionIdOrConnectInfo
+              }
+
+              const port = new RuntimePort(info?.name)
+              const receive = port._receive.bind(port)
+              const disconnect = port._disconnect.bind(port)
+
+              console.log('[electron-chrome-extensions] runtime.connect called, name:', info?.name)
+
+              electron.connectPort(
+                targetExtensionId || extensionId,
+                info,
+                receive,
+                disconnect,
+                (portId: string) => {
+                  port._init(portId)
+                }
+              )
+
+              return port
+            },
+            onConnect: onConnectEvent,
             // Custom sendMessage that routes through our IPC
             sendMessage: function(
               extensionIdOrMessage: any,
@@ -627,13 +921,15 @@ export const injectExtensionAPIs = () => {
             }
           }
 
-          console.log('[electron-chrome-extensions] runtime factory result, sendMessage:', typeof runtimeApi.sendMessage)
+          console.log('[electron-chrome-extensions] runtime factory result, sendMessage:', typeof runtimeApi.sendMessage, 'connect:', typeof runtimeApi.connect)
 
-          // Also patch browser.runtime.sendMessage if browser object exists
+          // Also patch browser.runtime if browser object exists
           // (webextension-polyfill may have already wrapped chrome.runtime)
           if ((globalThis as any).browser?.runtime) {
-            console.log('[electron-chrome-extensions] Patching browser.runtime.sendMessage')
+            console.log('[electron-chrome-extensions] Patching browser.runtime.sendMessage and connect')
             ;(globalThis as any).browser.runtime.sendMessage = runtimeApi.sendMessage
+            ;(globalThis as any).browser.runtime.connect = runtimeApi.connect
+            ;(globalThis as any).browser.runtime.onConnect = runtimeApi.onConnect
           }
 
           return runtimeApi

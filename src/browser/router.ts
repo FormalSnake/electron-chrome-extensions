@@ -298,6 +298,8 @@ export class ExtensionRouter {
   addListener(listener: EventListener, extensionId: string, eventName: string) {
     const { listeners, session } = this
 
+    console.log('[router] addListener called:', eventName, 'extensionId:', extensionId, 'type:', listener.type)
+
     const sessionExtensions = session.extensions || session
     const extension = sessionExtensions.getExtension(extensionId)
     if (!extension) {
@@ -313,8 +315,10 @@ export class ExtensionRouter {
 
     if (existingEventListener) {
       d(`ignoring existing '${eventName}' event listener for ${extensionId}`)
+      console.log('[router] Ignoring existing listener for:', eventName)
     } else {
       d(`adding '${eventName}' event listener for ${extensionId}`)
+      console.log('[router] Added listener for:', eventName, 'total listeners:', eventListeners.length + 1)
       eventListeners.push(listener)
       if (listener.type === 'frame' && listener.host) {
         this.observeListenerHost(listener.host)
@@ -427,8 +431,12 @@ export class ExtensionRouter {
     let eventListeners = listeners.get(eventName)
     const ipcName = `crx-${eventName}`
 
+    console.log('[router] sendEvent:', eventName, 'target:', targetExtensionId, 'listeners:', eventListeners?.length || 0)
+    console.log('[router] All registered events:', Array.from(listeners.keys()))
+
     if (!eventListeners || eventListeners.length === 0) {
       // Ignore events with no listeners
+      console.log('[router] No listeners for event:', eventName)
       return
     }
 
