@@ -96,6 +96,35 @@ export const injectExtensionAPIs = () => {
   function mainWorldScript() {
     console.log('[electron-chrome-extensions] mainWorldScript running in:', location.href)
 
+    // CRITICAL: Patch chrome.storage.sync IMMEDIATELY before any other code runs
+    // This must happen before webextension-polyfill checks for sync
+    const chromeObj = (globalThis as any).chrome
+    if (chromeObj && chromeObj.storage && !chromeObj.storage.sync) {
+      const local = chromeObj.storage.local
+      if (local) {
+        // Use Object.defineProperty to ensure it's an own property
+        Object.defineProperty(chromeObj.storage, 'sync', {
+          value: local,
+          writable: true,
+          enumerable: true,
+          configurable: true
+        })
+        Object.defineProperty(chromeObj.storage, 'managed', {
+          value: local,
+          writable: true,
+          enumerable: true,
+          configurable: true
+        })
+        Object.defineProperty(chromeObj.storage, 'session', {
+          value: local,
+          writable: true,
+          enumerable: true,
+          configurable: true
+        })
+        console.log('[electron-chrome-extensions] Patched storage.sync early, hasOwn:', Object.prototype.hasOwnProperty.call(chromeObj.storage, 'sync'))
+      }
+    }
+
     // Use context bridge API or closure variable when context isolation is disabled.
     const electron = ((globalThis as any).electron as typeof electronContext) || electronContext
 
