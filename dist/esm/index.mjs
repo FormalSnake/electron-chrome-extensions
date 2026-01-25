@@ -1343,32 +1343,33 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
-    console.log("[tabs.query] Initial state:", {
-      eventType: event.type,
-      hasSender: !!event.sender,
+    console.log("[tabs.query] ========== QUERY CALLED ==========");
+    console.log("[tabs.query] Event type:", event.type, "Has sender:", !!event.sender);
+    console.log("[tabs.query] Query info:", JSON.stringify(info));
+    console.log("[tabs.query] Store state:", {
       lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
       totalTabs: this.ctx.store.tabs.size,
       totalWindows: this.ctx.store.windows.size,
       popupWindowsCount: this.ctx.store.popupWindows.size
     });
+    let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
     if (event.type === "frame" && event.sender) {
       const senderWindow = BrowserWindow3.fromWebContents(event.sender);
-      console.log("[tabs.query] Sender window:", {
+      console.log("[tabs.query] Frame sender window:", {
         senderWindowId: senderWindow?.id,
         senderWindowDestroyed: senderWindow?.isDestroyed(),
         isPopup: senderWindow ? this.ctx.store.isPopup(senderWindow) : false
       });
       if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
         const parentWindow = this.ctx.store.getPopupParent(senderWindow);
-        console.log("[tabs.query] Found popup, parent:", parentWindow?.id);
+        console.log("[tabs.query] Found popup, parent window:", parentWindow?.id);
         if (parentWindow) {
           resolvedWindowId = parentWindow.id;
-          d4(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`);
         }
       }
     }
     if (typeof resolvedWindowId !== "number") {
+      console.log("[tabs.query] No resolvedWindowId, looking for fallback");
       const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
         return Array.from(this.ctx.store.tabs).some(
           (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
@@ -1379,7 +1380,7 @@ var _TabsAPI = class _TabsAPI {
         console.log("[tabs.query] Using fallback window:", resolvedWindowId);
       }
     }
-    console.log("[tabs.query] Final resolvedWindowId:", resolvedWindowId, "query:", JSON.stringify(info));
+    console.log("[tabs.query] Final resolvedWindowId:", resolvedWindowId);
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
@@ -2912,6 +2913,13 @@ var ExtensionRouter = class {
     return handler;
   }
   async onExtensionMessage(event, extensionId, handlerName, ...args) {
+    if (handlerName === "tabs.query") {
+      console.log("[router] tabs.query received:", {
+        eventType: event.type,
+        extensionId,
+        args: JSON.stringify(args)
+      });
+    }
     const { session: session2 } = this;
     const eventSession = getSessionFromEvent(event);
     const eventSessionExtensions = eventSession.extensions || eventSession;

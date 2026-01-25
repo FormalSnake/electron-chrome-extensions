@@ -358,6 +358,15 @@ export class ExtensionRouter {
     handlerName: string,
     ...args: any[]
   ) {
+    // Log all tabs.query calls for debugging
+    if (handlerName === 'tabs.query') {
+      console.log('[router] tabs.query received:', {
+        eventType: event.type,
+        extensionId,
+        args: JSON.stringify(args)
+      })
+    }
+
     const { session } = this
     const eventSession = getSessionFromEvent(event)
     const eventSessionExtensions = eventSession.extensions || eventSession

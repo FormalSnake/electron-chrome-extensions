@@ -190,38 +190,39 @@ export class TabsAPI {
   private query(event: ExtensionEvent, info: chrome.tabs.QueryInfo = {}) {
     const isSet = (value: any) => typeof value !== 'undefined'
 
-    // Resolve the target window ID for currentWindow/lastFocusedWindow queries
-    let resolvedWindowId = this.ctx.store.lastFocusedWindowId
-
-    console.log('[tabs.query] Initial state:', {
-      eventType: event.type,
-      hasSender: !!event.sender,
+    console.log('[tabs.query] ========== QUERY CALLED ==========')
+    console.log('[tabs.query] Event type:', event.type, 'Has sender:', !!event.sender)
+    console.log('[tabs.query] Query info:', JSON.stringify(info))
+    console.log('[tabs.query] Store state:', {
       lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
       totalTabs: this.ctx.store.tabs.size,
       totalWindows: this.ctx.store.windows.size,
       popupWindowsCount: this.ctx.store.popupWindows.size
     })
 
-    // If query is from a popup, resolve to popup's parent window
+    // Resolve the target window ID for currentWindow/lastFocusedWindow queries
+    let resolvedWindowId = this.ctx.store.lastFocusedWindowId
+
+    // If query is from a popup (frame type), resolve to popup's parent window
     if (event.type === 'frame' && event.sender) {
-      const senderWindow = BrowserWindow.fromWebContents(event.sender)
-      console.log('[tabs.query] Sender window:', {
+      const senderWindow = BrowserWindow.fromWebContents(event.sender as Electron.WebContents)
+      console.log('[tabs.query] Frame sender window:', {
         senderWindowId: senderWindow?.id,
         senderWindowDestroyed: senderWindow?.isDestroyed(),
         isPopup: senderWindow ? this.ctx.store.isPopup(senderWindow) : false
       })
       if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
         const parentWindow = this.ctx.store.getPopupParent(senderWindow)
-        console.log('[tabs.query] Found popup, parent:', parentWindow?.id)
+        console.log('[tabs.query] Found popup, parent window:', parentWindow?.id)
         if (parentWindow) {
           resolvedWindowId = parentWindow.id
-          d(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`)
         }
       }
     }
 
     // Fallback: if no focused window, use first window with tabs
     if (typeof resolvedWindowId !== 'number') {
+      console.log('[tabs.query] No resolvedWindowId, looking for fallback')
       const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
         return Array.from(this.ctx.store.tabs).some(
           (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
@@ -233,7 +234,7 @@ export class TabsAPI {
       }
     }
 
-    console.log('[tabs.query] Final resolvedWindowId:', resolvedWindowId, 'query:', JSON.stringify(info))
+    console.log('[tabs.query] Final resolvedWindowId:', resolvedWindowId)
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.createTabDetails.bind(this))
