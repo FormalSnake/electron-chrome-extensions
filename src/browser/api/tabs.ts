@@ -203,6 +203,13 @@ export class TabsAPI {
     // Resolve the target window ID for currentWindow/lastFocusedWindow queries
     let resolvedWindowId = this.ctx.store.lastFocusedWindowId
 
+    console.log('[tabs.query] Initial state:', {
+      eventType: event.type,
+      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
+      windowsCount: this.ctx.store.windows.size,
+      tabsCount: this.ctx.store.tabs.size
+    })
+
     // If query is from a popup (frame type), resolve to popup's parent window
     if (event.type === 'frame' && event.sender) {
       const senderWindow = BrowserWindow.fromWebContents(event.sender as Electron.WebContents)
@@ -220,7 +227,22 @@ export class TabsAPI {
       }
     }
 
-    // Fallback: if no focused window, use first window with tabs
+    // For service workers: if lastFocusedWindowId points to a popup, find its parent
+    if (event.type === 'service-worker' && typeof resolvedWindowId === 'number') {
+      // Check all windows to find if lastFocusedWindowId is a popup
+      for (const win of this.ctx.store.windows) {
+        if (win.id === resolvedWindowId && this.ctx.store.isPopup(win)) {
+          const parentWindow = this.ctx.store.getPopupParent(win)
+          if (parentWindow) {
+            console.log('[tabs.query] SW: lastFocused was popup, using parent:', parentWindow.id)
+            resolvedWindowId = parentWindow.id
+          }
+          break
+        }
+      }
+    }
+
+    // Fallback: if no focused window or invalid, use first window with tabs
     if (typeof resolvedWindowId !== 'number') {
       console.log('[tabs.query] No resolvedWindowId, looking for fallback')
       const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
@@ -231,6 +253,25 @@ export class TabsAPI {
       if (firstWindowWithTabs) {
         resolvedWindowId = firstWindowWithTabs.id
         console.log('[tabs.query] Using fallback window:', resolvedWindowId)
+      }
+    }
+
+    // Also fallback if resolvedWindowId doesn't have any tabs
+    if (typeof resolvedWindowId === 'number') {
+      const hasTabs = Array.from(this.ctx.store.tabs).some(
+        (tab) => this.ctx.store.tabToWindow.get(tab)?.id === resolvedWindowId
+      )
+      if (!hasTabs) {
+        console.log('[tabs.query] resolvedWindowId has no tabs, finding alternative')
+        const windowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
+          return !this.ctx.store.isPopup(win) && Array.from(this.ctx.store.tabs).some(
+            (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
+          )
+        })
+        if (windowWithTabs) {
+          resolvedWindowId = windowWithTabs.id
+          console.log('[tabs.query] Using window with tabs:', resolvedWindowId)
+        }
       }
     }
 

@@ -1474,6 +1474,12 @@ var _TabsAPI = class _TabsAPI {
       popupWindowsCount: this.ctx.store.popupWindows.size
     });
     let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
+    console.log("[tabs.query] Initial state:", {
+      eventType: event.type,
+      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
+      windowsCount: this.ctx.store.windows.size,
+      tabsCount: this.ctx.store.tabs.size
+    });
     if (event.type === "frame" && event.sender) {
       const senderWindow = BrowserWindow3.fromWebContents(event.sender);
       console.log("[tabs.query] Frame sender window:", {
@@ -1489,6 +1495,18 @@ var _TabsAPI = class _TabsAPI {
         }
       }
     }
+    if (event.type === "service-worker" && typeof resolvedWindowId === "number") {
+      for (const win of this.ctx.store.windows) {
+        if (win.id === resolvedWindowId && this.ctx.store.isPopup(win)) {
+          const parentWindow = this.ctx.store.getPopupParent(win);
+          if (parentWindow) {
+            console.log("[tabs.query] SW: lastFocused was popup, using parent:", parentWindow.id);
+            resolvedWindowId = parentWindow.id;
+          }
+          break;
+        }
+      }
+    }
     if (typeof resolvedWindowId !== "number") {
       console.log("[tabs.query] No resolvedWindowId, looking for fallback");
       const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
@@ -1499,6 +1517,23 @@ var _TabsAPI = class _TabsAPI {
       if (firstWindowWithTabs) {
         resolvedWindowId = firstWindowWithTabs.id;
         console.log("[tabs.query] Using fallback window:", resolvedWindowId);
+      }
+    }
+    if (typeof resolvedWindowId === "number") {
+      const hasTabs = Array.from(this.ctx.store.tabs).some(
+        (tab) => this.ctx.store.tabToWindow.get(tab)?.id === resolvedWindowId
+      );
+      if (!hasTabs) {
+        console.log("[tabs.query] resolvedWindowId has no tabs, finding alternative");
+        const windowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
+          return !this.ctx.store.isPopup(win) && Array.from(this.ctx.store.tabs).some(
+            (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
+          );
+        });
+        if (windowWithTabs) {
+          resolvedWindowId = windowWithTabs.id;
+          console.log("[tabs.query] Using window with tabs:", resolvedWindowId);
+        }
       }
     }
     console.log("[tabs.query] Final resolvedWindowId:", resolvedWindowId);
