@@ -370,40 +370,35 @@ function generateSWPolyfill() {
   }
 
   // Set up browser.* APIs for extensions using webextension-polyfill
-  // webextension-polyfill checks: typeof browser === "undefined" || Object.getPrototypeOf(browser) !== Object.prototype
-  // We must create a plain object (not a Proxy) that passes this check
-  if (!globalThis.browser || !globalThis.browser.runtime || !globalThis.browser.runtime.id) {
-    // Create a plain object that mirrors chrome
+  // ALWAYS augment browser object with our APIs, whether it exists or not
+  if (!globalThis.browser) {
     globalThis.browser = Object.create(Object.prototype);
-
-    // Copy all chrome properties to browser
-    Object.keys(chrome).forEach(function(key) {
-      try {
-        globalThis.browser[key] = chrome[key];
-      } catch (e) {
-        // Some properties may not be copyable
-      }
-    });
-
-    // Ensure our augmented APIs are on browser
-    globalThis.browser.commands = chrome.commands;
-    globalThis.browser.contextMenus = chrome.contextMenus;
-    globalThis.browser.tabs = chrome.tabs;
-    globalThis.browser.windows = chrome.windows;
-    globalThis.browser.cookies = chrome.cookies;
-    globalThis.browser.notifications = chrome.notifications;
-    globalThis.browser.permissions = chrome.permissions;
-    globalThis.browser.webNavigation = chrome.webNavigation;
-    globalThis.browser.storage = chrome.storage;
-    globalThis.browser.runtime = chrome.runtime;
-    globalThis.browser.extension = chrome.extension;
-    globalThis.browser.privacy = chrome.privacy;
-    globalThis.browser.i18n = chrome.i18n;
-    if (chrome.action) globalThis.browser.action = chrome.action;
-    if (chrome.browserAction) globalThis.browser.browserAction = chrome.browserAction;
-
-    console.log('[electron-chrome-extensions] browser.* object created with commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand);
   }
+
+  // Copy/overwrite with our augmented chrome APIs
+  // This ensures browser.commands.onCommand etc. are available
+  globalThis.browser.commands = chrome.commands;
+  globalThis.browser.contextMenus = chrome.contextMenus;
+  globalThis.browser.tabs = chrome.tabs;
+  globalThis.browser.windows = chrome.windows;
+  globalThis.browser.cookies = chrome.cookies;
+  globalThis.browser.notifications = chrome.notifications;
+  globalThis.browser.permissions = chrome.permissions;
+  globalThis.browser.webNavigation = chrome.webNavigation;
+  globalThis.browser.storage = chrome.storage;
+  globalThis.browser.extension = chrome.extension;
+  globalThis.browser.privacy = chrome.privacy;
+  globalThis.browser.i18n = chrome.i18n;
+  if (chrome.action) globalThis.browser.action = chrome.action;
+  if (chrome.browserAction) globalThis.browser.browserAction = chrome.browserAction;
+  // Keep existing runtime but add our openOptionsPage
+  if (!globalThis.browser.runtime) {
+    globalThis.browser.runtime = chrome.runtime;
+  } else if (!globalThis.browser.runtime.openOptionsPage) {
+    globalThis.browser.runtime.openOptionsPage = chrome.runtime.openOptionsPage;
+  }
+
+  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand);
 
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code
