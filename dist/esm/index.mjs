@@ -510,6 +510,7 @@ var _PopupView = class _PopupView extends EventEmitter {
     this.extensionId = opts.extensionId;
     this.anchorRect = opts.anchorRect;
     this.alignment = opts.alignment;
+    this.pendingUrl = opts.url;
     this.browserWindow = new BrowserWindow2({
       show: false,
       frame: true,
@@ -538,7 +539,16 @@ var _PopupView = class _PopupView extends EventEmitter {
     this.browserWindow.on("blur", this.maybeClose);
     this.browserWindow.on("closed", this.destroy);
     this.parent.once("closed", this.destroy);
-    this.readyPromise = this.load(opts.url);
+  }
+  /**
+   * Start loading the popup URL. Call this AFTER registering the popup
+   * with the store to ensure IPC is ready before page scripts run.
+   */
+  startLoading() {
+    if (this.pendingUrl && !this.readyPromise) {
+      this.readyPromise = this.load(this.pendingUrl);
+      this.pendingUrl = void 0;
+    }
   }
   show() {
     this.hidden = false;
@@ -568,6 +578,9 @@ var _PopupView = class _PopupView extends EventEmitter {
   }
   /** Resolves when the popup finishes loading. */
   whenReady() {
+    if (!this.readyPromise) {
+      this.startLoading();
+    }
     return this.readyPromise;
   }
   setSize(rect) {
@@ -957,6 +970,7 @@ var BrowserActionAPI = class {
             this.ctx.store.unregisterPopup(this.popup.browserWindow);
           }
         });
+        this.popup.startLoading();
       } else {
         console.log("[browser-action] WARNING: popup.browserWindow is undefined!");
       }

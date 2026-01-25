@@ -33,14 +33,20 @@ export declare class PopupView extends EventEmitter {
     private stableHeight;
     /** Preferred size changes are only received in Electron v12+ */
     private usingPreferredSize;
-    private readyPromise;
+    private readyPromise?;
+    private pendingUrl?;
     constructor(opts: PopupViewOptions);
+    /**
+     * Start loading the popup URL. Call this AFTER registering the popup
+     * with the store to ensure IPC is ready before page scripts run.
+     */
+    startLoading(): void;
     private show;
     private load;
     destroy: () => void;
     isDestroyed(): boolean;
     /** Resolves when the popup finishes loading. */
-    whenReady(): Promise<void>;
+    whenReady(): Promise<void> | undefined;
     setSize(rect: Partial<Electron.Rectangle>): void;
     private maybeClose;
     private updatePosition;

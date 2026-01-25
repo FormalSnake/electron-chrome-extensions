@@ -49,7 +49,8 @@ export class PopupView extends EventEmitter {
   /** Preferred size changes are only received in Electron v12+ */
   private usingPreferredSize = supportsPreferredSize()
 
-  private readyPromise: Promise<void>
+  private readyPromise?: Promise<void>
+  private pendingUrl?: string
 
   constructor(opts: PopupViewOptions) {
     super()
@@ -58,6 +59,7 @@ export class PopupView extends EventEmitter {
     this.extensionId = opts.extensionId
     this.anchorRect = opts.anchorRect
     this.alignment = opts.alignment
+    this.pendingUrl = opts.url
 
     this.browserWindow = new BrowserWindow({
       show: false,
@@ -89,8 +91,17 @@ export class PopupView extends EventEmitter {
     this.browserWindow.on('blur', this.maybeClose)
     this.browserWindow.on('closed', this.destroy)
     this.parent.once('closed', this.destroy)
+  }
 
-    this.readyPromise = this.load(opts.url)
+  /**
+   * Start loading the popup URL. Call this AFTER registering the popup
+   * with the store to ensure IPC is ready before page scripts run.
+   */
+  startLoading(): void {
+    if (this.pendingUrl && !this.readyPromise) {
+      this.readyPromise = this.load(this.pendingUrl)
+      this.pendingUrl = undefined
+    }
   }
 
   private show() {
@@ -163,6 +174,10 @@ export class PopupView extends EventEmitter {
 
   /** Resolves when the popup finishes loading. */
   whenReady() {
+    // Start loading if not already started
+    if (!this.readyPromise) {
+      this.startLoading()
+    }
     return this.readyPromise
   }
 
