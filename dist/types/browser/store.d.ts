@@ -18,6 +18,10 @@ export declare class ExtensionStore extends EventEmitter {
      * this ourselves.
      */
     tabToWindow: WeakMap<Electron.WebContents, Electron.BaseWindow>;
+    /** Extension popup windows - map to their parent window */
+    popupToParentWindow: WeakMap<Electron.BaseWindow, Electron.BaseWindow>;
+    /** Set of popup windows for quick lookup */
+    popupWindows: Set<Electron.BaseWindow>;
     /** Map of windows to their active tab. */
     private windowToActiveTab;
     tabDetailsCache: Map<number, Partial<chrome.tabs.Tab>>;
@@ -27,6 +31,10 @@ export declare class ExtensionStore extends EventEmitter {
     getWindowById(windowId: number): Electron.BaseWindow | undefined;
     getLastFocusedWindow(): Electron.BaseWindow | null | undefined;
     getCurrentWindow(): Electron.BaseWindow | null | undefined;
+    registerPopup(popup: Electron.BaseWindow, parentWindow: Electron.BaseWindow): void;
+    unregisterPopup(popup: Electron.BaseWindow): void;
+    isPopup(window: Electron.BaseWindow): boolean;
+    getPopupParent(popup: Electron.BaseWindow): Electron.BaseWindow | undefined;
     addWindow(window: Electron.BaseWindow): void;
     createWindow(event: ExtensionEvent, details: chrome.windows.CreateData): Promise<Electron.BaseWindow>;
     removeWindow(window: Electron.BaseWindow): Promise<void>;

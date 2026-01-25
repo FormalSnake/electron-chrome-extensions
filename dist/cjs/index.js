@@ -36,7 +36,7 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/browser/index.ts
-var import_electron11 = require("electron");
+var import_electron12 = require("electron");
 var import_node_events4 = require("node:events");
 var import_node_path = __toESM(require("node:path"));
 var import_node_fs3 = require("node:fs");
@@ -982,6 +982,14 @@ var BrowserActionAPI = class {
         anchorRect,
         alignment
       });
+      if (this.popup.browserWindow) {
+        this.ctx.store.registerPopup(this.popup.browserWindow, win);
+        this.popup.browserWindow.once("closed", () => {
+          if (this.popup?.browserWindow) {
+            this.ctx.store.unregisterPopup(this.popup.browserWindow);
+          }
+        });
+      }
       d2(`opened popup: ${popupUrl}`);
       this.ctx.emit("browser-action-popup-created", this.popup);
     } else {
@@ -1055,6 +1063,9 @@ var BrowserActionAPI = class {
     });
   }
 };
+
+// src/browser/api/tabs.ts
+var import_electron4 = require("electron");
 
 // src/browser/api/windows.ts
 var import_debug3 = __toESM(require("debug"));
@@ -1362,9 +1373,30 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    console.log("[tabs.query] called with:", JSON.stringify(info), "lastFocusedWindowId:", this.ctx.store.lastFocusedWindowId, "total tabs:", this.ctx.store.tabs.size);
+    let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
+    if (event.type === "frame" && event.sender) {
+      const senderWindow = import_electron4.BrowserWindow.fromWebContents(event.sender);
+      if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
+        const parentWindow = this.ctx.store.getPopupParent(senderWindow);
+        if (parentWindow) {
+          resolvedWindowId = parentWindow.id;
+          d4(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`);
+        }
+      }
+    }
+    if (typeof resolvedWindowId !== "number") {
+      const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
+        return Array.from(this.ctx.store.tabs).some(
+          (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
+        );
+      });
+      if (firstWindowWithTabs) {
+        resolvedWindowId = firstWindowWithTabs.id;
+        d4(`[tabs.query] Using fallback window: ${resolvedWindowId}`);
+      }
+    }
+    d4("[tabs.query] called with:", JSON.stringify(info), "resolvedWindowId:", resolvedWindowId, "total tabs:", this.ctx.store.tabs.size);
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
-      console.log("[tabs.query]   tab:", tab?.id, "url:", tab?.url?.substring(0, 50), "active:", tab?.active, "windowId:", tab?.windowId);
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
       if (isSet(info.pinned) && info.pinned !== tab.pinned) return false;
@@ -1375,10 +1407,10 @@ var _TabsAPI = class _TabsAPI {
       if (isSet(info.autoDiscardable) && info.autoDiscardable !== tab.autoDiscardable)
         return false;
       if (isSet(info.currentWindow) && info.currentWindow) {
-        if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+        if (resolvedWindowId !== tab.windowId) return false;
       }
       if (isSet(info.lastFocusedWindow) && info.lastFocusedWindow) {
-        if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+        if (resolvedWindowId !== tab.windowId) return false;
       }
       if (isSet(info.frozen) && info.frozen !== tab.frozen) return false;
       if (isSet(info.groupId) && info.groupId !== tab.groupId) return false;
@@ -1395,7 +1427,7 @@ var _TabsAPI = class _TabsAPI {
       }
       if (isSet(info.windowId)) {
         if (info.windowId === _TabsAPI.WINDOW_ID_CURRENT) {
-          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+          if (resolvedWindowId !== tab.windowId) return false;
         } else if (info.windowId !== tab.windowId) {
           return false;
         }
@@ -1407,7 +1439,7 @@ var _TabsAPI = class _TabsAPI {
       }
       return tab;
     });
-    console.log("[tabs.query] result:", filteredTabs.length, "tabs, first url:", filteredTabs[0]?.url);
+    d4("[tabs.query] result:", filteredTabs.length, "tabs");
     return filteredTabs;
   }
   reload(event, arg1, arg2) {
@@ -1711,7 +1743,7 @@ var WebNavigationAPI = class {
 };
 
 // src/browser/store.ts
-var import_electron4 = require("electron");
+var import_electron5 = require("electron");
 var import_node_events2 = require("node:events");
 var ExtensionStore = class extends import_node_events2.EventEmitter {
   constructor(impl) {
@@ -1728,6 +1760,10 @@ var ExtensionStore = class extends import_node_events2.EventEmitter {
      * this ourselves.
      */
     this.tabToWindow = /* @__PURE__ */ new WeakMap();
+    /** Extension popup windows - map to their parent window */
+    this.popupToParentWindow = /* @__PURE__ */ new WeakMap();
+    /** Set of popup windows for quick lookup */
+    this.popupWindows = /* @__PURE__ */ new Set();
     /** Map of windows to their active tab. */
     this.windowToActiveTab = /* @__PURE__ */ new WeakMap();
     this.tabDetailsCache = /* @__PURE__ */ new Map();
@@ -1744,6 +1780,20 @@ var ExtensionStore = class extends import_node_events2.EventEmitter {
   }
   getCurrentWindow() {
     return this.getLastFocusedWindow();
+  }
+  registerPopup(popup, parentWindow) {
+    this.popupWindows.add(popup);
+    this.popupToParentWindow.set(popup, parentWindow);
+  }
+  unregisterPopup(popup) {
+    this.popupWindows.delete(popup);
+    this.popupToParentWindow.delete(popup);
+  }
+  isPopup(window) {
+    return this.popupWindows.has(window);
+  }
+  getPopupParent(popup) {
+    return this.popupToParentWindow.get(popup);
   }
   addWindow(window) {
     if (this.windows.has(window)) return;
@@ -1811,7 +1861,7 @@ var ExtensionStore = class extends import_node_events2.EventEmitter {
       throw new Error("createTab must return an array of [tab, window]");
     }
     const [tab, window] = result;
-    if (typeof tab !== "object" || !import_electron4.webContents.fromId(tab.id)) {
+    if (typeof tab !== "object" || !import_electron5.webContents.fromId(tab.id)) {
       throw new Error("createTab must return a WebContents");
     } else if (typeof window !== "object") {
       throw new Error("createTab must return a BrowserWindow");
@@ -1824,7 +1874,7 @@ var ExtensionStore = class extends import_node_events2.EventEmitter {
     return activeTab && !activeTab.isDestroyed() && activeTab || void 0;
   }
   getActiveTabFromWebContents(wc) {
-    const win = this.tabToWindow.get(wc) || import_electron4.BrowserWindow.fromWebContents(wc);
+    const win = this.tabToWindow.get(wc) || import_electron5.BrowserWindow.fromWebContents(wc);
     const activeTab = win ? this.getActiveTabFromWindow(win) : void 0;
     return activeTab;
   }
@@ -1896,7 +1946,7 @@ var ExtensionStore = class extends import_node_events2.EventEmitter {
 };
 
 // src/browser/api/context-menus.ts
-var import_electron5 = require("electron");
+var import_electron6 = require("electron");
 var DEFAULT_CONTEXTS = ["page"];
 var getContextTypesFromParams = (params) => {
   const contexts = /* @__PURE__ */ new Set(["all"]);
@@ -1979,11 +2029,11 @@ var ContextMenusAPI = class {
       const menuItems = [];
       const buildFromTemplate = (opts) => {
         if (Array.isArray(opts.submenu)) {
-          const submenu = new import_electron5.Menu();
+          const submenu = new import_electron6.Menu();
           opts.submenu.forEach((item) => submenu.append(buildFromTemplate(item)));
           opts.submenu = submenu;
         }
-        return new import_electron5.MenuItem({
+        return new import_electron6.MenuItem({
           ...opts,
           // Force submenu type when submenu items are present
           type: opts.type === "normal" && opts.submenu ? "submenu" : opts.type
@@ -2150,7 +2200,7 @@ var import_node_child_process = require("node:child_process");
 var import_node_fs2 = require("node:fs");
 var os = __toESM(require("node:os"));
 var path2 = __toESM(require("node:path"));
-var import_electron6 = require("electron");
+var import_electron7 = require("electron");
 var import_debug7 = __toESM(require("debug"));
 
 // src/browser/api/lib/winreg.ts
@@ -2212,14 +2262,14 @@ async function getConfigSearchPaths(application) {
           "Google/Chrome/NativeMessagingHosts",
           appJson
         ),
-        path2.join(import_electron6.app.getPath("userData"), "NativeMessagingHosts", appJson)
+        path2.join(import_electron7.app.getPath("userData"), "NativeMessagingHosts", appJson)
       ];
       break;
     case "linux":
       searchPaths = [
         path2.join("/etc/opt/chrome/native-messaging-hosts/", appJson),
         path2.join(os.homedir(), ".config/google-chrome/NativeMessagingHosts/", appJson),
-        path2.join(import_electron6.app.getPath("userData"), "NativeMessagingHosts", appJson)
+        path2.join(import_electron7.app.getPath("userData"), "NativeMessagingHosts", appJson)
       ];
       break;
     case "win32": {
@@ -2485,7 +2535,7 @@ var CookiesAPI = class {
 };
 
 // src/browser/api/notifications.ts
-var import_electron7 = require("electron");
+var import_electron8 = require("electron");
 var getBody = (opts) => {
   const { type = "basic" /* Basic */ } = opts;
   switch (type) {
@@ -2560,9 +2610,9 @@ var NotificationsAPI = class {
           throw new Error("Invalid iconUrl");
         }
       }
-      const notification = new import_electron7.Notification({
+      const notification = new import_electron8.Notification({
         title: opts.title,
-        subtitle: import_electron7.app.name,
+        subtitle: import_electron8.app.name,
         body: getBody(opts),
         silent: opts.silent,
         icon,
@@ -2585,7 +2635,7 @@ var NotificationsAPI = class {
       return Array.from(this.registry.keys()).filter((key) => key.startsWith(extension.id)).map(stripScopeFromIdentifier);
     };
     this.getPermissionLevel = (event) => {
-      return import_electron7.Notification.isSupported() ? "granted" : "denied";
+      return import_electron8.Notification.isSupported() ? "granted" : "denied";
     };
     this.update = ({ extension }, id, opts) => {
       const notificationId = createScopedIdentifier(extension, id);
@@ -2652,12 +2702,12 @@ var CommandsAPI = class {
 };
 
 // src/browser/router.ts
-var import_electron9 = require("electron");
+var import_electron10 = require("electron");
 var import_debug8 = __toESM(require("debug"));
 
 // src/browser/partition.ts
-var import_electron8 = require("electron");
-var resolvePartitionImpl = (partition) => import_electron8.session.fromPartition(partition);
+var import_electron9 = require("electron");
+var resolvePartitionImpl = (partition) => import_electron9.session.fromPartition(partition);
 function setSessionPartitionResolver(resolver) {
   resolvePartitionImpl = resolver;
 }
@@ -2719,10 +2769,10 @@ var RoutingDelegate = class _RoutingDelegate {
       };
       return observer?.removeListener(listener, extensionId, eventName);
     };
-    import_electron9.ipcMain.handle("crx-msg", this.onRouterMessage);
-    import_electron9.ipcMain.handle("crx-msg-remote", this.onRemoteMessage);
-    import_electron9.ipcMain.on("crx-add-listener", this.onAddListener);
-    import_electron9.ipcMain.on("crx-remove-listener", this.onRemoveListener);
+    import_electron10.ipcMain.handle("crx-msg", this.onRouterMessage);
+    import_electron10.ipcMain.handle("crx-msg-remote", this.onRemoteMessage);
+    import_electron10.ipcMain.on("crx-add-listener", this.onAddListener);
+    import_electron10.ipcMain.on("crx-remove-listener", this.onRemoveListener);
   }
   static get() {
     return gRoutingDelegate || (gRoutingDelegate = new _RoutingDelegate());
@@ -2780,7 +2830,7 @@ var ExtensionRouter = class {
     sessionExtensions.on("extension-unloaded", (event, extension) => {
       this.filterListeners((listener) => listener.extensionId !== extension.id);
     });
-    import_electron9.app.on("web-contents-created", (event, webContents2) => {
+    import_electron10.app.on("web-contents-created", (event, webContents2) => {
       if (webContents2.session === this.session && webContents2.getType() === "backgroundPage") {
         d8(`storing reference to background host [url:'${webContents2.getURL()}']`);
         this.extensionHosts.add(webContents2);
@@ -2952,7 +3002,7 @@ var ExtensionRouter = class {
 };
 
 // src/browser/license.ts
-var import_electron10 = require("electron");
+var import_electron11 = require("electron");
 var nodeCrypto = __toESM(require("node:crypto"));
 var fs3 = __toESM(require("node:fs"));
 var path3 = __toESM(require("node:path"));
@@ -2967,7 +3017,7 @@ var getLicenseNotice = () => `Please select a distribution license compatible wi
 Valid licenses include: ${Array.from(VALID_LICENSES).join(", ")}
 See LICENSE.md for more details.`;
 function readPackageJson() {
-  const appPath = import_electron10.app.getAppPath();
+  const appPath = import_electron11.app.getAppPath();
   const packageJsonPath = path3.join(appPath, "package.json");
   const rawData = fs3.readFileSync(packageJsonPath, "utf-8");
   return JSON.parse(rawData);
@@ -3134,7 +3184,7 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
     this.swScriptPaths = /* @__PURE__ */ new Map();
     /** Cached polyfill code */
     this.swPolyfill = generateSWPolyfill();
-    const { license, session: session2 = import_electron11.session.defaultSession, ...impl } = opts || {};
+    const { license, session: session2 = import_electron12.session.defaultSession, ...impl } = opts || {};
     checkVersion();
     checkLicense(license);
     if (sessionMap.has(session2)) {

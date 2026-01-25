@@ -21,6 +21,12 @@ export class ExtensionStore extends EventEmitter {
    */
   tabToWindow = new WeakMap<Electron.WebContents, Electron.BaseWindow>()
 
+  /** Extension popup windows - map to their parent window */
+  popupToParentWindow = new WeakMap<Electron.BaseWindow, Electron.BaseWindow>()
+
+  /** Set of popup windows for quick lookup */
+  popupWindows = new Set<Electron.BaseWindow>()
+
   /** Map of windows to their active tab. */
   private windowToActiveTab = new WeakMap<Electron.BaseWindow, Electron.WebContents>()
 
@@ -45,6 +51,24 @@ export class ExtensionStore extends EventEmitter {
 
   getCurrentWindow() {
     return this.getLastFocusedWindow()
+  }
+
+  registerPopup(popup: Electron.BaseWindow, parentWindow: Electron.BaseWindow) {
+    this.popupWindows.add(popup)
+    this.popupToParentWindow.set(popup, parentWindow)
+  }
+
+  unregisterPopup(popup: Electron.BaseWindow) {
+    this.popupWindows.delete(popup)
+    this.popupToParentWindow.delete(popup)
+  }
+
+  isPopup(window: Electron.BaseWindow): boolean {
+    return this.popupWindows.has(window)
+  }
+
+  getPopupParent(popup: Electron.BaseWindow): Electron.BaseWindow | undefined {
+    return this.popupToParentWindow.get(popup)
   }
 
   addWindow(window: Electron.BaseWindow) {

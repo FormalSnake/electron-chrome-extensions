@@ -421,6 +421,17 @@ export class BrowserActionAPI {
         alignment
       })
 
+      // Register popup with its parent window for currentWindow resolution
+      if (this.popup.browserWindow) {
+        this.ctx.store.registerPopup(this.popup.browserWindow, win)
+
+        this.popup.browserWindow.once('closed', () => {
+          if (this.popup?.browserWindow) {
+            this.ctx.store.unregisterPopup(this.popup.browserWindow)
+          }
+        })
+      }
+
       d(`opened popup: ${popupUrl}`)
 
       this.ctx.emit('browser-action-popup-created', this.popup)

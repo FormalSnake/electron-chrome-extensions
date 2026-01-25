@@ -1,3 +1,4 @@
+import { BrowserWindow } from 'electron'
 import { ExtensionContext } from '../context'
 import { ExtensionEvent } from '../router'
 import { getAllWindows, matchesPattern, matchesTitlePattern, TabContents } from './common'
@@ -189,12 +190,39 @@ export class TabsAPI {
   private query(event: ExtensionEvent, info: chrome.tabs.QueryInfo = {}) {
     const isSet = (value: any) => typeof value !== 'undefined'
 
-    console.log('[tabs.query] called with:', JSON.stringify(info), 'lastFocusedWindowId:', this.ctx.store.lastFocusedWindowId, 'total tabs:', this.ctx.store.tabs.size)
+    // Resolve the target window ID for currentWindow/lastFocusedWindow queries
+    let resolvedWindowId = this.ctx.store.lastFocusedWindowId
+
+    // If query is from a popup, resolve to popup's parent window
+    if (event.type === 'frame' && event.sender) {
+      const senderWindow = BrowserWindow.fromWebContents(event.sender)
+      if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
+        const parentWindow = this.ctx.store.getPopupParent(senderWindow)
+        if (parentWindow) {
+          resolvedWindowId = parentWindow.id
+          d(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`)
+        }
+      }
+    }
+
+    // Fallback: if no focused window, use first window with tabs
+    if (typeof resolvedWindowId !== 'number') {
+      const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
+        return Array.from(this.ctx.store.tabs).some(
+          (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
+        )
+      })
+      if (firstWindowWithTabs) {
+        resolvedWindowId = firstWindowWithTabs.id
+        d(`[tabs.query] Using fallback window: ${resolvedWindowId}`)
+      }
+    }
+
+    d('[tabs.query] called with:', JSON.stringify(info), 'resolvedWindowId:', resolvedWindowId, 'total tabs:', this.ctx.store.tabs.size)
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.createTabDetails.bind(this))
       .filter((tab) => {
-        console.log('[tabs.query]   tab:', tab?.id, 'url:', tab?.url?.substring(0, 50), 'active:', tab?.active, 'windowId:', tab?.windowId)
         if (!tab) return false
         if (isSet(info.active) && info.active !== tab.active) return false
         if (isSet(info.pinned) && info.pinned !== tab.pinned) return false
@@ -205,10 +233,10 @@ export class TabsAPI {
         if (isSet(info.autoDiscardable) && info.autoDiscardable !== tab.autoDiscardable)
           return false
         if (isSet(info.currentWindow) && info.currentWindow) {
-          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+          if (resolvedWindowId !== tab.windowId) return false
         }
         if (isSet(info.lastFocusedWindow) && info.lastFocusedWindow) {
-          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+          if (resolvedWindowId !== tab.windowId) return false
         }
         if (isSet(info.frozen) && info.frozen !== tab.frozen) return false
         if (isSet(info.groupId) && info.groupId !== tab.groupId) return false
@@ -228,7 +256,7 @@ export class TabsAPI {
         }
         if (isSet(info.windowId)) {
           if (info.windowId === TabsAPI.WINDOW_ID_CURRENT) {
-            if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+            if (resolvedWindowId !== tab.windowId) return false
           } else if (info.windowId !== tab.windowId) {
             return false
           }
@@ -243,7 +271,7 @@ export class TabsAPI {
         }
         return tab
       })
-    console.log('[tabs.query] result:', filteredTabs.length, 'tabs, first url:', filteredTabs[0]?.url)
+    d('[tabs.query] result:', filteredTabs.length, 'tabs')
     return filteredTabs
   }
 

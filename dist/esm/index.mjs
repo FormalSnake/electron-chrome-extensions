@@ -945,6 +945,14 @@ var BrowserActionAPI = class {
         anchorRect,
         alignment
       });
+      if (this.popup.browserWindow) {
+        this.ctx.store.registerPopup(this.popup.browserWindow, win);
+        this.popup.browserWindow.once("closed", () => {
+          if (this.popup?.browserWindow) {
+            this.ctx.store.unregisterPopup(this.popup.browserWindow);
+          }
+        });
+      }
       d2(`opened popup: ${popupUrl}`);
       this.ctx.emit("browser-action-popup-created", this.popup);
     } else {
@@ -1018,6 +1026,9 @@ var BrowserActionAPI = class {
     });
   }
 };
+
+// src/browser/api/tabs.ts
+import { BrowserWindow as BrowserWindow3 } from "electron";
 
 // src/browser/api/windows.ts
 import debug3 from "debug";
@@ -1325,9 +1336,30 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    console.log("[tabs.query] called with:", JSON.stringify(info), "lastFocusedWindowId:", this.ctx.store.lastFocusedWindowId, "total tabs:", this.ctx.store.tabs.size);
+    let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
+    if (event.type === "frame" && event.sender) {
+      const senderWindow = BrowserWindow3.fromWebContents(event.sender);
+      if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
+        const parentWindow = this.ctx.store.getPopupParent(senderWindow);
+        if (parentWindow) {
+          resolvedWindowId = parentWindow.id;
+          d4(`[tabs.query] Resolved popup parent window: ${resolvedWindowId}`);
+        }
+      }
+    }
+    if (typeof resolvedWindowId !== "number") {
+      const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
+        return Array.from(this.ctx.store.tabs).some(
+          (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
+        );
+      });
+      if (firstWindowWithTabs) {
+        resolvedWindowId = firstWindowWithTabs.id;
+        d4(`[tabs.query] Using fallback window: ${resolvedWindowId}`);
+      }
+    }
+    d4("[tabs.query] called with:", JSON.stringify(info), "resolvedWindowId:", resolvedWindowId, "total tabs:", this.ctx.store.tabs.size);
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
-      console.log("[tabs.query]   tab:", tab?.id, "url:", tab?.url?.substring(0, 50), "active:", tab?.active, "windowId:", tab?.windowId);
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
       if (isSet(info.pinned) && info.pinned !== tab.pinned) return false;
@@ -1338,10 +1370,10 @@ var _TabsAPI = class _TabsAPI {
       if (isSet(info.autoDiscardable) && info.autoDiscardable !== tab.autoDiscardable)
         return false;
       if (isSet(info.currentWindow) && info.currentWindow) {
-        if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+        if (resolvedWindowId !== tab.windowId) return false;
       }
       if (isSet(info.lastFocusedWindow) && info.lastFocusedWindow) {
-        if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+        if (resolvedWindowId !== tab.windowId) return false;
       }
       if (isSet(info.frozen) && info.frozen !== tab.frozen) return false;
       if (isSet(info.groupId) && info.groupId !== tab.groupId) return false;
@@ -1358,7 +1390,7 @@ var _TabsAPI = class _TabsAPI {
       }
       if (isSet(info.windowId)) {
         if (info.windowId === _TabsAPI.WINDOW_ID_CURRENT) {
-          if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false;
+          if (resolvedWindowId !== tab.windowId) return false;
         } else if (info.windowId !== tab.windowId) {
           return false;
         }
@@ -1370,7 +1402,7 @@ var _TabsAPI = class _TabsAPI {
       }
       return tab;
     });
-    console.log("[tabs.query] result:", filteredTabs.length, "tabs, first url:", filteredTabs[0]?.url);
+    d4("[tabs.query] result:", filteredTabs.length, "tabs");
     return filteredTabs;
   }
   reload(event, arg1, arg2) {
@@ -1674,7 +1706,7 @@ var WebNavigationAPI = class {
 };
 
 // src/browser/store.ts
-import { BrowserWindow as BrowserWindow3, webContents } from "electron";
+import { BrowserWindow as BrowserWindow4, webContents } from "electron";
 import { EventEmitter as EventEmitter2 } from "node:events";
 var ExtensionStore = class extends EventEmitter2 {
   constructor(impl) {
@@ -1691,6 +1723,10 @@ var ExtensionStore = class extends EventEmitter2 {
      * this ourselves.
      */
     this.tabToWindow = /* @__PURE__ */ new WeakMap();
+    /** Extension popup windows - map to their parent window */
+    this.popupToParentWindow = /* @__PURE__ */ new WeakMap();
+    /** Set of popup windows for quick lookup */
+    this.popupWindows = /* @__PURE__ */ new Set();
     /** Map of windows to their active tab. */
     this.windowToActiveTab = /* @__PURE__ */ new WeakMap();
     this.tabDetailsCache = /* @__PURE__ */ new Map();
@@ -1707,6 +1743,20 @@ var ExtensionStore = class extends EventEmitter2 {
   }
   getCurrentWindow() {
     return this.getLastFocusedWindow();
+  }
+  registerPopup(popup, parentWindow) {
+    this.popupWindows.add(popup);
+    this.popupToParentWindow.set(popup, parentWindow);
+  }
+  unregisterPopup(popup) {
+    this.popupWindows.delete(popup);
+    this.popupToParentWindow.delete(popup);
+  }
+  isPopup(window) {
+    return this.popupWindows.has(window);
+  }
+  getPopupParent(popup) {
+    return this.popupToParentWindow.get(popup);
   }
   addWindow(window) {
     if (this.windows.has(window)) return;
@@ -1787,7 +1837,7 @@ var ExtensionStore = class extends EventEmitter2 {
     return activeTab && !activeTab.isDestroyed() && activeTab || void 0;
   }
   getActiveTabFromWebContents(wc) {
-    const win = this.tabToWindow.get(wc) || BrowserWindow3.fromWebContents(wc);
+    const win = this.tabToWindow.get(wc) || BrowserWindow4.fromWebContents(wc);
     const activeTab = win ? this.getActiveTabFromWindow(win) : void 0;
     return activeTab;
   }
