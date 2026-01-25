@@ -333,24 +333,39 @@ function generateSWPolyfill() {
   }
 
   // Set up browser.* APIs for extensions using webextension-polyfill
-  // Create browser as a Proxy to chrome BEFORE webextension-polyfill runs
-  // This way webextension-polyfill will detect an existing browser object and not create its own
+  // webextension-polyfill checks: typeof browser === "undefined" || Object.getPrototypeOf(browser) !== Object.prototype
+  // We must create a plain object (not a Proxy) that passes this check
   if (!globalThis.browser || !globalThis.browser.runtime || !globalThis.browser.runtime.id) {
-    globalThis.browser = new Proxy(chrome, {
-      get: function(target, prop) {
-        return target[prop];
-      },
-      has: function(target, prop) {
-        return prop in target;
-      },
-      ownKeys: function(target) {
-        return Object.keys(target);
-      },
-      getOwnPropertyDescriptor: function(target, prop) {
-        return Object.getOwnPropertyDescriptor(target, prop);
+    // Create a plain object that mirrors chrome
+    globalThis.browser = Object.create(Object.prototype);
+
+    // Copy all chrome properties to browser
+    Object.keys(chrome).forEach(function(key) {
+      try {
+        globalThis.browser[key] = chrome[key];
+      } catch (e) {
+        // Some properties may not be copyable
       }
     });
-    console.log('[electron-chrome-extensions] browser.* Proxy to chrome created');
+
+    // Ensure our augmented APIs are on browser
+    globalThis.browser.commands = chrome.commands;
+    globalThis.browser.contextMenus = chrome.contextMenus;
+    globalThis.browser.tabs = chrome.tabs;
+    globalThis.browser.windows = chrome.windows;
+    globalThis.browser.cookies = chrome.cookies;
+    globalThis.browser.notifications = chrome.notifications;
+    globalThis.browser.permissions = chrome.permissions;
+    globalThis.browser.webNavigation = chrome.webNavigation;
+    globalThis.browser.storage = chrome.storage;
+    globalThis.browser.runtime = chrome.runtime;
+    globalThis.browser.extension = chrome.extension;
+    globalThis.browser.privacy = chrome.privacy;
+    globalThis.browser.i18n = chrome.i18n;
+    if (chrome.action) globalThis.browser.action = chrome.action;
+    if (chrome.browserAction) globalThis.browser.browserAction = chrome.browserAction;
+
+    console.log('[electron-chrome-extensions] browser.* object created with commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand);
   }
 
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
