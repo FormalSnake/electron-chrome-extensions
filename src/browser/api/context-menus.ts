@@ -320,10 +320,7 @@ export class ContextMenusAPI {
     webContents: Electron.WebContents,
     params?: Electron.ContextMenuParams
   ) {
-    console.log('[context-menus] onClicked called', { extensionId, menuItemId })
-
     if (webContents.isDestroyed()) {
-      console.log('[context-menus] webContents is destroyed, aborting')
       return
     }
 
@@ -346,7 +343,6 @@ export class ContextMenusAPI {
       srcUrl: params?.srcURL
     }
 
-    console.log('[context-menus] Sending event via router', { eventName: 'contextMenus.onClicked', data })
     this.ctx.router.sendEvent(extensionId, 'contextMenus.onClicked', data, tab)
   }
 }

@@ -134,13 +134,6 @@ class RoutingDelegate {
   }
 
   private onAddListener = (event: IpcAnyEvent, extensionId: string, eventName: string) => {
-    console.log('[router] onAddListener', {
-      extensionId,
-      eventName,
-      eventType: event.type,
-      senderUrl: event.type === 'frame' ? event.sender?.getURL?.() : 'service-worker'
-    })
-
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -312,16 +305,9 @@ export class ExtensionRouter {
   addListener(listener: EventListener, extensionId: string, eventName: string) {
     const { listeners, session } = this
 
-    console.log('[router] ExtensionRouter.addListener called', {
-      extensionId,
-      eventName,
-      listenerType: listener.type
-    })
-
     const sessionExtensions = session.extensions || session
     const extension = sessionExtensions.getExtension(extensionId)
     if (!extension) {
-      console.log('[router] Extension not found in session', extensionId)
       throw new Error(`extension not registered in session [extensionId:${extensionId}]`)
     }
 
@@ -334,10 +320,8 @@ export class ExtensionRouter {
 
     if (existingEventListener) {
       d(`ignoring existing '${eventName}' event listener for ${extensionId}`)
-      console.log('[router] Ignoring existing listener for', eventName)
     } else {
       d(`adding '${eventName}' event listener for ${extensionId}`)
-      console.log('[router] Successfully added listener for', eventName, 'total listeners:', eventListeners.length + 1)
       eventListeners.push(listener)
       if (listener.type === 'frame' && listener.host) {
         this.observeListenerHost(listener.host)
@@ -441,17 +425,8 @@ export class ExtensionRouter {
     let eventListeners = listeners.get(eventName)
     const ipcName = `crx-${eventName}`
 
-    console.log('[router] sendEvent', {
-      eventName,
-      targetExtensionId,
-      listenerCount: eventListeners?.length ?? 0,
-      allListeners: Array.from(listeners.keys()),
-      listenerDetails: eventListeners?.map((l) => ({ type: l.type, extensionId: l.extensionId }))
-    })
-
     if (!eventListeners || eventListeners.length === 0) {
       // Ignore events with no listeners
-      console.log('[router] sendEvent: No listeners registered for', eventName)
       return
     }
 
@@ -460,23 +435,18 @@ export class ExtensionRouter {
       const { type, extensionId } = listener
 
       if (targetExtensionId && targetExtensionId !== extensionId) {
-        console.log('[router] Skipping listener for different extension', { targetExtensionId, listenerExtensionId: extensionId })
         continue
       }
 
       if (type === 'service-worker') {
         const scope = `chrome-extension://${extensionId}/`
-        console.log('[router] Starting service worker for scope', { scope, ipcName, extensionId })
         this.session.serviceWorkers
           .startWorkerForScope(scope)
           .then((serviceWorker) => {
-            console.log('[router] Service worker started, sending IPC', { ipcName, extensionId, argsCount: args.length, versionId: serviceWorker.versionId })
             serviceWorker.send(ipcName, ...args)
-            console.log('[router] IPC sent to service worker', { ipcName, extensionId })
           })
           .catch((error) => {
             d('failed to send %s to %s', eventName, extensionId)
-            console.error('[router] Failed to send to service worker', { eventName, extensionId, error })
           })
       } else {
         if (listener.host.isDestroyed()) {

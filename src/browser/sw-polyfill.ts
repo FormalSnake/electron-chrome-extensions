@@ -61,9 +61,7 @@ export function generateSWPolyfill(): string {
   }
   ExtensionEvent.prototype.addListener = function(callback) {
     var eventName = this._name;
-    console.log('[sw-polyfill] Adding listener for', eventName, 'extension:', extensionId);
     electron.addExtensionListener(extensionId, eventName, function() {
-      console.log('[sw-polyfill] Event received:', eventName, 'args:', arguments);
       callback.apply(null, arguments);
     });
   };
@@ -134,15 +132,9 @@ export function generateSWPolyfill(): string {
     };
     // Wire up onclick callbacks
     ctxApi.onClicked.addListener(function(info, tab) {
-      console.log('[sw-polyfill] contextMenus.onClicked received', { info: info, tab: tab });
-      console.log('[sw-polyfill] menuCallbacks:', Object.keys(menuCallbacks));
       var cb = menuCallbacks[info.menuItemId];
-      console.log('[sw-polyfill] Found callback for menuItemId', info.menuItemId, ':', !!cb);
       if (cb && tab) {
-        console.log('[sw-polyfill] Calling callback');
         cb(info, tab);
-      } else {
-        console.log('[sw-polyfill] No callback or no tab, skipping');
       }
     });
     chrome.contextMenus = ctxApi;

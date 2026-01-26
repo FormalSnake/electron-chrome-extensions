@@ -69,9 +69,7 @@ function generateSWPolyfill() {
   }
   ExtensionEvent.prototype.addListener = function(callback) {
     var eventName = this._name;
-    console.log('[sw-polyfill] Adding listener for', eventName, 'extension:', extensionId);
     electron.addExtensionListener(extensionId, eventName, function() {
-      console.log('[sw-polyfill] Event received:', eventName, 'args:', arguments);
       callback.apply(null, arguments);
     });
   };
@@ -142,15 +140,9 @@ function generateSWPolyfill() {
     };
     // Wire up onclick callbacks
     ctxApi.onClicked.addListener(function(info, tab) {
-      console.log('[sw-polyfill] contextMenus.onClicked received', { info: info, tab: tab });
-      console.log('[sw-polyfill] menuCallbacks:', Object.keys(menuCallbacks));
       var cb = menuCallbacks[info.menuItemId];
-      console.log('[sw-polyfill] Found callback for menuItemId', info.menuItemId, ':', !!cb);
       if (cb && tab) {
-        console.log('[sw-polyfill] Calling callback');
         cb(info, tab);
-      } else {
-        console.log('[sw-polyfill] No callback or no tab, skipping');
       }
     });
     chrome.contextMenus = ctxApi;
@@ -2451,9 +2443,7 @@ var ContextMenusAPI = class {
     return this.buildMenuItemsFromTemplate(menuItemOptions);
   }
   onClicked(extensionId, menuItemId, webContents2, params) {
-    console.log("[context-menus] onClicked called", { extensionId, menuItemId });
     if (webContents2.isDestroyed()) {
-      console.log("[context-menus] webContents is destroyed, aborting");
       return;
     }
     const tab = this.ctx.store.createFreshTabDetails(webContents2);
@@ -2477,7 +2467,6 @@ var ContextMenusAPI = class {
       // TODO
       srcUrl: params?.srcURL
     };
-    console.log("[context-menus] Sending event via router", { eventName: "contextMenus.onClicked", data });
     this.ctx.router.sendEvent(extensionId, "contextMenus.onClicked", data, tab);
   }
 };
@@ -3274,12 +3263,6 @@ var RoutingDelegate = class _RoutingDelegate {
       return observer?.onExtensionMessage(event, void 0, handlerName, ...args);
     };
     this.onAddListener = (event, extensionId, eventName) => {
-      console.log("[router] onAddListener", {
-        extensionId,
-        eventName,
-        eventType: event.type,
-        senderUrl: event.type === "frame" ? event.sender?.getURL?.() : "service-worker"
-      });
       const observer = this.sessionMap.get(getSessionFromEvent(event));
       const listener = event.type === "frame" ? {
         type: event.type,
@@ -3415,15 +3398,9 @@ var ExtensionRouter = class {
   }
   addListener(listener, extensionId, eventName) {
     const { listeners, session: session2 } = this;
-    console.log("[router] ExtensionRouter.addListener called", {
-      extensionId,
-      eventName,
-      listenerType: listener.type
-    });
     const sessionExtensions = session2.extensions || session2;
     const extension = sessionExtensions.getExtension(extensionId);
     if (!extension) {
-      console.log("[router] Extension not found in session", extensionId);
       throw new Error(`extension not registered in session [extensionId:${extensionId}]`);
     }
     if (!listeners.has(eventName)) {
@@ -3433,10 +3410,8 @@ var ExtensionRouter = class {
     const existingEventListener = eventListeners.find(eventListenerEquals(listener));
     if (existingEventListener) {
       d9(`ignoring existing '${eventName}' event listener for ${extensionId}`);
-      console.log("[router] Ignoring existing listener for", eventName);
     } else {
       d9(`adding '${eventName}' event listener for ${extensionId}`);
-      console.log("[router] Successfully added listener for", eventName, "total listeners:", eventListeners.length + 1);
       eventListeners.push(listener);
       if (listener.type === "frame" && listener.host) {
         this.observeListenerHost(listener.host);
@@ -3513,34 +3488,21 @@ var ExtensionRouter = class {
     const { listeners } = this;
     let eventListeners = listeners.get(eventName);
     const ipcName = `crx-${eventName}`;
-    console.log("[router] sendEvent", {
-      eventName,
-      targetExtensionId,
-      listenerCount: eventListeners?.length ?? 0,
-      allListeners: Array.from(listeners.keys()),
-      listenerDetails: eventListeners?.map((l) => ({ type: l.type, extensionId: l.extensionId }))
-    });
     if (!eventListeners || eventListeners.length === 0) {
-      console.log("[router] sendEvent: No listeners registered for", eventName);
       return;
     }
     let sentCount = 0;
     for (const listener of eventListeners) {
       const { type, extensionId } = listener;
       if (targetExtensionId && targetExtensionId !== extensionId) {
-        console.log("[router] Skipping listener for different extension", { targetExtensionId, listenerExtensionId: extensionId });
         continue;
       }
       if (type === "service-worker") {
         const scope = `chrome-extension://${extensionId}/`;
-        console.log("[router] Starting service worker for scope", { scope, ipcName, extensionId });
         this.session.serviceWorkers.startWorkerForScope(scope).then((serviceWorker) => {
-          console.log("[router] Service worker started, sending IPC", { ipcName, extensionId, argsCount: args.length, versionId: serviceWorker.versionId });
           serviceWorker.send(ipcName, ...args);
-          console.log("[router] IPC sent to service worker", { ipcName, extensionId });
         }).catch((error) => {
           d9("failed to send %s to %s", eventName, extensionId);
-          console.error("[router] Failed to send to service worker", { eventName, extensionId, error });
         });
       } else {
         if (listener.host.isDestroyed()) {
