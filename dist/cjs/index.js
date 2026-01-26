@@ -98,9 +98,10 @@ function generateSWPolyfill() {
     this._name = name;
   }
   ExtensionEvent.prototype.addListener = function(callback) {
-    console.log('[sw-polyfill] Adding listener for', this._name, 'extension:', extensionId);
-    electron.addExtensionListener(extensionId, this._name, function() {
-      console.log('[sw-polyfill] Event received:', name, 'args:', arguments);
+    var eventName = this._name;
+    console.log('[sw-polyfill] Adding listener for', eventName, 'extension:', extensionId);
+    electron.addExtensionListener(extensionId, eventName, function() {
+      console.log('[sw-polyfill] Event received:', eventName, 'args:', arguments);
       callback.apply(null, arguments);
     });
   };
@@ -3564,7 +3565,7 @@ var ExtensionRouter = class {
         const scope = `chrome-extension://${extensionId}/`;
         console.log("[router] Starting service worker for scope", { scope, ipcName, extensionId });
         this.session.serviceWorkers.startWorkerForScope(scope).then((serviceWorker) => {
-          console.log("[router] Service worker started, sending IPC", { ipcName, extensionId, argsCount: args.length });
+          console.log("[router] Service worker started, sending IPC", { ipcName, extensionId, argsCount: args.length, versionId: serviceWorker.versionId });
           serviceWorker.send(ipcName, ...args);
           console.log("[router] IPC sent to service worker", { ipcName, extensionId });
         }).catch((error) => {

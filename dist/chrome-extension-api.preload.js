@@ -15,17 +15,23 @@
   var formatIpcName = (name) => `crx-${name}`;
   var listenerMap = /* @__PURE__ */ new Map();
   var addExtensionListener = (extensionId, name, callback) => {
+    const ipcName = formatIpcName(name);
     const listenerCount = listenerMap.get(name) || 0;
+    console.log("[event.ts] addExtensionListener called", { extensionId, name, ipcName, listenerCount, processType: process.type });
     if (listenerCount === 0) {
+      console.log("[event.ts] Sending crx-add-listener IPC", { extensionId, name });
       import_electron.ipcRenderer.send("crx-add-listener", extensionId, name);
     }
     listenerMap.set(name, listenerCount + 1);
-    import_electron.ipcRenderer.addListener(formatIpcName(name), function(event, ...args) {
+    console.log("[event.ts] Adding ipcRenderer listener for", ipcName);
+    import_electron.ipcRenderer.addListener(ipcName, function(event, ...args) {
+      console.log("[event.ts] IPC received on channel", ipcName, "args:", args);
       if (true) {
         console.log(name, "(result)", ...args);
       }
       callback(...args);
     });
+    console.log("[event.ts] Listener added for", ipcName, "total listeners:", listenerMap.get(name));
   };
   var removeExtensionListener = (extensionId, name, callback) => {
     if (listenerMap.has(name)) {

@@ -470,7 +470,7 @@ export class ExtensionRouter {
         this.session.serviceWorkers
           .startWorkerForScope(scope)
           .then((serviceWorker) => {
-            console.log('[router] Service worker started, sending IPC', { ipcName, extensionId, argsCount: args.length })
+            console.log('[router] Service worker started, sending IPC', { ipcName, extensionId, argsCount: args.length, versionId: serviceWorker.versionId })
             serviceWorker.send(ipcName, ...args)
             console.log('[router] IPC sent to service worker', { ipcName, extensionId })
           })
