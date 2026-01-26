@@ -2468,7 +2468,11 @@ var ContextMenusAPI = class {
     return this.buildMenuItemsFromTemplate(menuItemOptions);
   }
   onClicked(extensionId, menuItemId, webContents2, params) {
-    if (webContents2.isDestroyed()) return;
+    console.log("[context-menus] onClicked called", { extensionId, menuItemId });
+    if (webContents2.isDestroyed()) {
+      console.log("[context-menus] webContents is destroyed, aborting");
+      return;
+    }
     const tab = this.ctx.store.createFreshTabDetails(webContents2);
     const data = {
       selectionText: params?.selectionText,
@@ -2490,6 +2494,7 @@ var ContextMenusAPI = class {
       // TODO
       srcUrl: params?.srcURL
     };
+    console.log("[context-menus] Sending event via router", { eventName: "contextMenus.onClicked", data });
     this.ctx.router.sendEvent(extensionId, "contextMenus.onClicked", data, tab);
   }
 };
@@ -3286,6 +3291,12 @@ var RoutingDelegate = class _RoutingDelegate {
       return observer?.onExtensionMessage(event, void 0, handlerName, ...args);
     };
     this.onAddListener = (event, extensionId, eventName) => {
+      console.log("[router] onAddListener", {
+        extensionId,
+        eventName,
+        eventType: event.type,
+        senderUrl: event.type === "frame" ? event.sender?.getURL?.() : "service-worker"
+      });
       const observer = this.sessionMap.get(getSessionFromEvent(event));
       const listener = event.type === "frame" ? {
         type: event.type,
@@ -3421,9 +3432,15 @@ var ExtensionRouter = class {
   }
   addListener(listener, extensionId, eventName) {
     const { listeners, session: session2 } = this;
+    console.log("[router] ExtensionRouter.addListener called", {
+      extensionId,
+      eventName,
+      listenerType: listener.type
+    });
     const sessionExtensions = session2.extensions || session2;
     const extension = sessionExtensions.getExtension(extensionId);
     if (!extension) {
+      console.log("[router] Extension not found in session", extensionId);
       throw new Error(`extension not registered in session [extensionId:${extensionId}]`);
     }
     if (!listeners.has(eventName)) {
@@ -3433,8 +3450,10 @@ var ExtensionRouter = class {
     const existingEventListener = eventListeners.find(eventListenerEquals(listener));
     if (existingEventListener) {
       d9(`ignoring existing '${eventName}' event listener for ${extensionId}`);
+      console.log("[router] Ignoring existing listener for", eventName);
     } else {
       d9(`adding '${eventName}' event listener for ${extensionId}`);
+      console.log("[router] Successfully added listener for", eventName, "total listeners:", eventListeners.length + 1);
       eventListeners.push(listener);
       if (listener.type === "frame" && listener.host) {
         this.observeListenerHost(listener.host);
@@ -3511,7 +3530,15 @@ var ExtensionRouter = class {
     const { listeners } = this;
     let eventListeners = listeners.get(eventName);
     const ipcName = `crx-${eventName}`;
+    console.log("[router] sendEvent", {
+      eventName,
+      targetExtensionId,
+      listenerCount: eventListeners?.length ?? 0,
+      allListeners: Array.from(listeners.keys()),
+      listenerDetails: eventListeners?.map((l) => ({ type: l.type, extensionId: l.extensionId }))
+    });
     if (!eventListeners || eventListeners.length === 0) {
+      console.log("[router] sendEvent: No listeners registered for", eventName);
       return;
     }
     let sentCount = 0;

@@ -134,6 +134,13 @@ class RoutingDelegate {
   }
 
   private onAddListener = (event: IpcAnyEvent, extensionId: string, eventName: string) => {
+    console.log('[router] onAddListener', {
+      extensionId,
+      eventName,
+      eventType: event.type,
+      senderUrl: event.type === 'frame' ? event.sender?.getURL?.() : 'service-worker'
+    })
+
     const observer = this.sessionMap.get(getSessionFromEvent(event))
     const listener: EventListener =
       event.type === 'frame'
@@ -305,9 +312,16 @@ export class ExtensionRouter {
   addListener(listener: EventListener, extensionId: string, eventName: string) {
     const { listeners, session } = this
 
+    console.log('[router] ExtensionRouter.addListener called', {
+      extensionId,
+      eventName,
+      listenerType: listener.type
+    })
+
     const sessionExtensions = session.extensions || session
     const extension = sessionExtensions.getExtension(extensionId)
     if (!extension) {
+      console.log('[router] Extension not found in session', extensionId)
       throw new Error(`extension not registered in session [extensionId:${extensionId}]`)
     }
 
@@ -320,8 +334,10 @@ export class ExtensionRouter {
 
     if (existingEventListener) {
       d(`ignoring existing '${eventName}' event listener for ${extensionId}`)
+      console.log('[router] Ignoring existing listener for', eventName)
     } else {
       d(`adding '${eventName}' event listener for ${extensionId}`)
+      console.log('[router] Successfully added listener for', eventName, 'total listeners:', eventListeners.length + 1)
       eventListeners.push(listener)
       if (listener.type === 'frame' && listener.host) {
         this.observeListenerHost(listener.host)
@@ -425,8 +441,17 @@ export class ExtensionRouter {
     let eventListeners = listeners.get(eventName)
     const ipcName = `crx-${eventName}`
 
+    console.log('[router] sendEvent', {
+      eventName,
+      targetExtensionId,
+      listenerCount: eventListeners?.length ?? 0,
+      allListeners: Array.from(listeners.keys()),
+      listenerDetails: eventListeners?.map((l) => ({ type: l.type, extensionId: l.extensionId }))
+    })
+
     if (!eventListeners || eventListeners.length === 0) {
       // Ignore events with no listeners
+      console.log('[router] sendEvent: No listeners registered for', eventName)
       return
     }
 
