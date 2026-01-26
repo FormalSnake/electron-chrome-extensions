@@ -59,7 +59,7 @@ class RoutingDelegate {
   }
 
   private sessionMap: WeakMap<Session, RoutingDelegateObserver> = new WeakMap()
-  private workers: WeakSet<any> = new WeakSet()
+  private workerVersions = new Map<number, boolean>()
 
   private constructor() {
     ipcMain.handle('crx-msg', this.onRouterMessage)
@@ -75,22 +75,29 @@ class RoutingDelegate {
       runningStatus,
       versionId
     }: Electron.Event<Electron.ServiceWorkersRunningStatusChangedEventParams>) => {
+      // Handle cleanup when worker stops
+      if (runningStatus === 'stopped') {
+        this.workerVersions.delete(versionId)
+        return
+      }
+
       if (runningStatus !== 'starting') return
+
+      // Prevent duplicate registrations for the same versionId
+      if (this.workerVersions.has(versionId)) return
 
       const serviceWorker = (observer.session as any).serviceWorkers.getWorkerFromVersionID(
         versionId
       )
-      if (
-        serviceWorker?.scope?.startsWith('chrome-extension://') &&
-        !this.workers.has(serviceWorker)
-      ) {
-        d(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`)
-        this.workers.add(serviceWorker)
-        serviceWorker.ipc.handle('crx-msg', this.onRouterMessage)
-        serviceWorker.ipc.handle('crx-msg-remote', this.onRemoteMessage)
-        serviceWorker.ipc.on('crx-add-listener', this.onAddListener)
-        serviceWorker.ipc.on('crx-remove-listener', this.onRemoveListener)
-      }
+      if (!serviceWorker?.scope?.startsWith('chrome-extension://')) return
+
+      this.workerVersions.set(versionId, true)
+      d(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`)
+
+      serviceWorker.ipc.handle('crx-msg', this.onRouterMessage)
+      serviceWorker.ipc.handle('crx-msg-remote', this.onRemoteMessage)
+      serviceWorker.ipc.on('crx-add-listener', this.onAddListener)
+      serviceWorker.ipc.on('crx-remove-listener', this.onRemoveListener)
     }
     observer.session.serviceWorkers.on('running-status-changed', maybeListenForWorkerEvents)
   }
@@ -298,8 +305,6 @@ export class ExtensionRouter {
   addListener(listener: EventListener, extensionId: string, eventName: string) {
     const { listeners, session } = this
 
-    console.log('[router] addListener called:', eventName, 'extensionId:', extensionId, 'type:', listener.type)
-
     const sessionExtensions = session.extensions || session
     const extension = sessionExtensions.getExtension(extensionId)
     if (!extension) {
@@ -315,10 +320,8 @@ export class ExtensionRouter {
 
     if (existingEventListener) {
       d(`ignoring existing '${eventName}' event listener for ${extensionId}`)
-      console.log('[router] Ignoring existing listener for:', eventName)
     } else {
       d(`adding '${eventName}' event listener for ${extensionId}`)
-      console.log('[router] Added listener for:', eventName, 'total listeners:', eventListeners.length + 1)
       eventListeners.push(listener)
       if (listener.type === 'frame' && listener.host) {
         this.observeListenerHost(listener.host)
@@ -331,7 +334,7 @@ export class ExtensionRouter {
 
     const eventListeners = listeners.get(eventName)
     if (!eventListeners) {
-      console.error(`event listener not registered for '${eventName}'`)
+      d(`event listener not registered for '${eventName}'`)
       return
     }
 
@@ -362,15 +365,6 @@ export class ExtensionRouter {
     handlerName: string,
     ...args: any[]
   ) {
-    // Log all tabs.query calls for debugging
-    if (handlerName === 'tabs.query') {
-      console.log('[router] tabs.query received:', {
-        eventType: event.type,
-        extensionId,
-        args: JSON.stringify(args)
-      })
-    }
-
     const { session } = this
     const eventSession = getSessionFromEvent(event)
     const eventSessionExtensions = eventSession.extensions || eventSession
@@ -431,12 +425,8 @@ export class ExtensionRouter {
     let eventListeners = listeners.get(eventName)
     const ipcName = `crx-${eventName}`
 
-    console.log('[router] sendEvent:', eventName, 'target:', targetExtensionId, 'listeners:', eventListeners?.length || 0)
-    console.log('[router] All registered events:', Array.from(listeners.keys()))
-
     if (!eventListeners || eventListeners.length === 0) {
       // Ignore events with no listeners
-      console.log('[router] No listeners for event:', eventName)
       return
     }
 
@@ -461,7 +451,7 @@ export class ExtensionRouter {
           })
       } else {
         if (listener.host.isDestroyed()) {
-          console.error(`Unable to send '${eventName}' to extension host for ${extensionId}`)
+          d(`Unable to send '${eventName}' to extension host for ${extensionId}`)
           return
         }
         listener.host.send(ipcName, ...args)

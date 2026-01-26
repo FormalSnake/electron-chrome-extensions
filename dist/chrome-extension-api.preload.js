@@ -140,18 +140,7 @@
       disconnectPort
     };
     function mainWorldScript() {
-      console.log("[electron-chrome-extensions] mainWorldScript running in:", location.href);
       const chromeObj = globalThis.chrome;
-      console.log(
-        "[electron-chrome-extensions] chrome exists:",
-        !!chromeObj,
-        "storage exists:",
-        !!(chromeObj && chromeObj.storage),
-        "storage.sync:",
-        chromeObj?.storage?.sync,
-        "storage.local:",
-        chromeObj?.storage?.local
-      );
       if (chromeObj && chromeObj.storage) {
         const local = chromeObj.storage.local;
         const storageImpl = local || {
@@ -196,14 +185,7 @@
             enumerable: true,
             configurable: true
           });
-          console.log(
-            "[electron-chrome-extensions] Patched storage, sync hasOwn:",
-            Object.prototype.hasOwnProperty.call(chromeObj.storage, "sync"),
-            "sync value:",
-            chromeObj.storage.sync
-          );
         } catch (e) {
-          console.error("[electron-chrome-extensions] Failed to patch storage:", e);
         }
       }
       const electron = globalThis.electron || electronContext;
@@ -407,7 +389,6 @@
         }
         return false;
       })();
-      console.log("[electron-chrome-extensions] Context check - isBackgroundPage:", isBackgroundPage, "url:", location.href);
       class OnConnectEvent {
         constructor() {
           this.listeners = [];
@@ -419,28 +400,23 @@
         initializeListeners() {
           if (this.initialized) return;
           this.initialized = true;
-          console.log("[electron-chrome-extensions] Initializing onConnect listeners for background page");
           electron.addExtensionListener(extensionId, "runtime.onConnect", (portId, name, sender) => {
-            console.log("[electron-chrome-extensions] Background received onConnect:", portId, name);
             const port = new BackgroundPort(portId, name, sender);
             backgroundPorts.set(portId, port);
             this.listeners.forEach((listener) => {
               try {
                 listener(port);
               } catch (e) {
-                console.error("[electron-chrome-extensions] onConnect listener error:", e);
               }
             });
           });
           electron.addExtensionListener(extensionId, "runtime.port-message", (portId, message) => {
-            console.log("[electron-chrome-extensions] Background received port message:", portId, message);
             const port = backgroundPorts.get(portId);
             if (port) {
               port._receive(message);
             }
           });
           electron.addExtensionListener(extensionId, "runtime.port-disconnect", (portId) => {
-            console.log("[electron-chrome-extensions] Background received port disconnect:", portId);
             const port = backgroundPorts.get(portId);
             if (port) {
               port._disconnect();
@@ -449,7 +425,6 @@
           });
         }
         addListener(callback) {
-          console.log("[electron-chrome-extensions] onConnect.addListener called, isBackgroundPage:", isBackgroundPage);
           this.listeners.push(callback);
           if (isBackgroundPage && !this.initialized) {
             this.initializeListeners();
@@ -688,7 +663,6 @@
         },
         runtime: {
           factory: (base) => {
-            console.log("[electron-chrome-extensions] runtime factory called, base.sendMessage:", typeof base?.sendMessage);
             const runtimeApi = {
               ...base,
               connectNative: (application) => {
@@ -716,7 +690,6 @@
                 const port = new RuntimePort(info?.name);
                 const receive = port._receive.bind(port);
                 const disconnect = port._disconnect.bind(port);
-                console.log("[electron-chrome-extensions] runtime.connect called, name:", info?.name);
                 electron.connectPort(
                   targetExtensionId || extensionId,
                   info,
@@ -743,13 +716,11 @@
                   options = typeof messageOrOptions === "object" ? messageOrOptions : void 0;
                   responseCallback = typeof messageOrOptions === "function" ? messageOrOptions : optionsOrCallback;
                 }
-                console.log("[electron-chrome-extensions] popup runtime.sendMessage:", message);
                 const promise = electron.invokeExtension(extensionId, "runtime.sendMessage", {}, message, options);
                 if (typeof responseCallback === "function") {
                   promise.then((result) => {
                     responseCallback(result);
                   }).catch((e) => {
-                    console.error("[electron-chrome-extensions] sendMessage error:", e);
                     responseCallback(void 0);
                   });
                   return true;
@@ -757,9 +728,8 @@
                 return promise;
               }
             };
-            console.log("[electron-chrome-extensions] runtime factory result, sendMessage:", typeof runtimeApi.sendMessage, "connect:", typeof runtimeApi.connect);
             if (globalThis.browser?.runtime) {
-              console.log("[electron-chrome-extensions] Patching browser.runtime.sendMessage and connect");
+              ;
               globalThis.browser.runtime.sendMessage = runtimeApi.sendMessage;
               globalThis.browser.runtime.connect = runtimeApi.connect;
               globalThis.browser.runtime.onConnect = runtimeApi.onConnect;
@@ -915,7 +885,6 @@
         try {
           const desc = Object.getOwnPropertyDescriptor(chrome, apiName);
           if (desc && !desc.configurable) {
-            console.warn(`[electron-chrome-extensions] ${apiName} is non-configurable, trying direct assignment`);
             const newValue = api.factory(baseApi);
             if (baseApi && typeof baseApi === "object" && typeof newValue === "object") {
               Object.assign(baseApi, newValue);
@@ -928,15 +897,12 @@
             });
           }
         } catch (e) {
-          console.error(`[electron-chrome-extensions] Failed to define ${apiName}:`, e);
         }
       });
       delete globalThis.electron;
-      console.log("[electron-chrome-extensions] APIs injected, storage.sync:", !!chrome.storage?.sync);
       Object.freeze(chrome);
     }
     if (!process.contextIsolated) {
-      console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`);
       mainWorldScript();
       return;
     }
@@ -954,8 +920,6 @@
         import_electron2.webFrame.executeJavaScript(`(${mainWorldScript}());`);
       }
     } catch (error) {
-      console.error(`injectExtensionAPIs error (${process.type === "service-worker" ? "service-worker" : location.href})`);
-      console.error(error);
     }
   };
 

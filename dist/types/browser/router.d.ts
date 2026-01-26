@@ -15,7 +15,7 @@ interface RoutingDelegateObserver {
 declare class RoutingDelegate {
     static get(): RoutingDelegate;
     private sessionMap;
-    private workers;
+    private workerVersions;
     private constructor();
     addObserver(observer: RoutingDelegateObserver): void;
     private onRouterMessage;

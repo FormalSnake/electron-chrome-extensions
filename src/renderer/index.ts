@@ -160,15 +160,9 @@ export const injectExtensionAPIs = () => {
   // Function body to run in the main world.
   // IMPORTANT: This must be self-contained, no closure variable will be included!
   function mainWorldScript() {
-    console.log('[electron-chrome-extensions] mainWorldScript running in:', location.href)
-
     // CRITICAL: Patch chrome.storage.sync IMMEDIATELY before any other code runs
     // This must happen before webextension-polyfill checks for sync
     const chromeObj = (globalThis as any).chrome
-    console.log('[electron-chrome-extensions] chrome exists:', !!chromeObj,
-                'storage exists:', !!(chromeObj && chromeObj.storage),
-                'storage.sync:', chromeObj?.storage?.sync,
-                'storage.local:', chromeObj?.storage?.local)
 
     if (chromeObj && chromeObj.storage) {
       const local = chromeObj.storage.local
@@ -201,11 +195,8 @@ export const injectExtensionAPIs = () => {
           enumerable: true,
           configurable: true
         })
-        console.log('[electron-chrome-extensions] Patched storage, sync hasOwn:',
-                    Object.prototype.hasOwnProperty.call(chromeObj.storage, 'sync'),
-                    'sync value:', chromeObj.storage.sync)
       } catch (e) {
-        console.error('[electron-chrome-extensions] Failed to patch storage:', e)
+        // Failed to patch storage - continue anyway
       }
     }
 
@@ -470,8 +461,6 @@ export const injectExtensionAPIs = () => {
       return false
     })()
 
-    console.log('[electron-chrome-extensions] Context check - isBackgroundPage:', isBackgroundPage, 'url:', location.href)
-
     // Custom onConnect event that creates proper Port objects
     class OnConnectEvent {
       private listeners: ((port: chrome.runtime.Port) => void)[] = []
@@ -489,11 +478,8 @@ export const injectExtensionAPIs = () => {
         if (this.initialized) return
         this.initialized = true
 
-        console.log('[electron-chrome-extensions] Initializing onConnect listeners for background page')
-
         // Listen for onConnect events from main process
         electron.addExtensionListener(extensionId, 'runtime.onConnect', (portId: string, name: string, sender: any) => {
-          console.log('[electron-chrome-extensions] Background received onConnect:', portId, name)
           const port = new BackgroundPort(portId, name, sender)
           backgroundPorts.set(portId, port)
 
@@ -502,14 +488,13 @@ export const injectExtensionAPIs = () => {
             try {
               listener(port)
             } catch (e) {
-              console.error('[electron-chrome-extensions] onConnect listener error:', e)
+              // Ignore listener errors
             }
           })
         })
 
         // Listen for port messages from main process
         electron.addExtensionListener(extensionId, 'runtime.port-message', (portId: string, message: any) => {
-          console.log('[electron-chrome-extensions] Background received port message:', portId, message)
           const port = backgroundPorts.get(portId)
           if (port) {
             port._receive(message)
@@ -518,7 +503,6 @@ export const injectExtensionAPIs = () => {
 
         // Listen for port disconnects
         electron.addExtensionListener(extensionId, 'runtime.port-disconnect', (portId: string) => {
-          console.log('[electron-chrome-extensions] Background received port disconnect:', portId)
           const port = backgroundPorts.get(portId)
           if (port) {
             port._disconnect()
@@ -528,7 +512,6 @@ export const injectExtensionAPIs = () => {
       }
 
       addListener(callback: (port: chrome.runtime.Port) => void) {
-        console.log('[electron-chrome-extensions] onConnect.addListener called, isBackgroundPage:', isBackgroundPage)
         this.listeners.push(callback)
 
         // If addListener is called in background page but we haven't initialized yet, do it now
@@ -828,8 +811,6 @@ export const injectExtensionAPIs = () => {
 
       runtime: {
         factory: (base) => {
-          console.log('[electron-chrome-extensions] runtime factory called, base.sendMessage:', typeof base?.sendMessage)
-
           const runtimeApi = {
             ...base,
             connectNative: (application: string) => {
@@ -862,8 +843,6 @@ export const injectExtensionAPIs = () => {
               const port = new RuntimePort(info?.name)
               const receive = port._receive.bind(port)
               const disconnect = port._disconnect.bind(port)
-
-              console.log('[electron-chrome-extensions] runtime.connect called, name:', info?.name)
 
               electron.connectPort(
                 targetExtensionId || extensionId,
@@ -902,8 +881,6 @@ export const injectExtensionAPIs = () => {
                 responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback
               }
 
-              console.log('[electron-chrome-extensions] popup runtime.sendMessage:', message)
-
               // Use our custom IPC-based implementation
               const promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options)
 
@@ -911,7 +888,6 @@ export const injectExtensionAPIs = () => {
                 promise.then((result: any) => {
                   responseCallback!(result)
                 }).catch((e: Error) => {
-                  console.error('[electron-chrome-extensions] sendMessage error:', e)
                   responseCallback!(undefined)
                 })
                 return true // Indicate async response
@@ -921,12 +897,9 @@ export const injectExtensionAPIs = () => {
             }
           }
 
-          console.log('[electron-chrome-extensions] runtime factory result, sendMessage:', typeof runtimeApi.sendMessage, 'connect:', typeof runtimeApi.connect)
-
           // Also patch browser.runtime if browser object exists
           // (webextension-polyfill may have already wrapped chrome.runtime)
           if ((globalThis as any).browser?.runtime) {
-            console.log('[electron-chrome-extensions] Patching browser.runtime.sendMessage and connect')
             ;(globalThis as any).browser.runtime.sendMessage = runtimeApi.sendMessage
             ;(globalThis as any).browser.runtime.connect = runtimeApi.connect
             ;(globalThis as any).browser.runtime.onConnect = runtimeApi.onConnect
@@ -1109,7 +1082,6 @@ export const injectExtensionAPIs = () => {
       try {
         const desc = Object.getOwnPropertyDescriptor(chrome, apiName)
         if (desc && !desc.configurable) {
-          console.warn(`[electron-chrome-extensions] ${apiName} is non-configurable, trying direct assignment`)
           // Try to extend the existing object instead
           const newValue = api.factory(baseApi)
           if (baseApi && typeof baseApi === 'object' && typeof newValue === 'object') {
@@ -1123,14 +1095,12 @@ export const injectExtensionAPIs = () => {
           })
         }
       } catch (e) {
-        console.error(`[electron-chrome-extensions] Failed to define ${apiName}:`, e)
+        // Failed to define API - continue anyway
       }
     })
 
     // Remove access to internals
     delete (globalThis as any).electron
-
-    console.log('[electron-chrome-extensions] APIs injected, storage.sync:', !!chrome.storage?.sync)
 
     Object.freeze(chrome)
 
@@ -1138,7 +1108,6 @@ export const injectExtensionAPIs = () => {
   }
 
   if (!process.contextIsolated) {
-    console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`)
     mainWorldScript()
     return
   }
@@ -1164,7 +1133,6 @@ export const injectExtensionAPIs = () => {
       webFrame.executeJavaScript(`(${mainWorldScript}());`)
     }
   } catch (error) {
-    console.error(`injectExtensionAPIs error (${process.type === 'service-worker' ? 'service-worker' : location.href})`)
-    console.error(error)
+    // Extension API injection failed - extension functionality may be limited
   }
 }

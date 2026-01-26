@@ -424,14 +424,9 @@ export class BrowserActionAPI {
       // Register popup with its parent window for currentWindow resolution
       // IMPORTANT: This must happen BEFORE startLoading() to ensure IPC is ready
       if (this.popup.browserWindow) {
-        console.log('[browser-action] Registering popup:', {
-          popupWindowId: this.popup.browserWindow.id,
-          parentWindowId: win.id
-        })
         this.ctx.store.registerPopup(this.popup.browserWindow, win)
 
         this.popup.browserWindow.once('closed', () => {
-          console.log('[browser-action] Popup closed, unregistering')
           if (this.popup?.browserWindow) {
             this.ctx.store.unregisterPopup(this.popup.browserWindow)
           }
@@ -439,8 +434,6 @@ export class BrowserActionAPI {
 
         // Now start loading the popup URL after registration is complete
         this.popup.startLoading()
-      } else {
-        console.log('[browser-action] WARNING: popup.browserWindow is undefined!')
       }
 
       d(`opened popup: ${popupUrl}`)

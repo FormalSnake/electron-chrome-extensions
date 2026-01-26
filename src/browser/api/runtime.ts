@@ -36,6 +36,9 @@ export class RuntimeAPI extends EventEmitter {
   // Active port connections: portId -> PortConnection
   private ports = new Map<string, PortConnection>()
 
+  // Track registered service workers by versionId to prevent duplicate listeners
+  private registeredWorkers = new Map<number, boolean>()
+
   constructor(private ctx: ExtensionContext) {
     super()
 
@@ -52,6 +55,12 @@ export class RuntimeAPI extends EventEmitter {
 
     // Handle port messages and disconnects
     this.setupPortHandlers()
+
+    // Set up consolidated service worker IPC listeners with proper cleanup
+    this.setupServiceWorkerListeners()
+
+    // Set up periodic cleanup for stale ports
+    this.setupPortCleanup()
   }
 
   private setupResponseHandler() {
@@ -68,14 +77,7 @@ export class RuntimeAPI extends EventEmitter {
 
     ipcMain.on('crx-runtime-response', handler)
 
-    // Also handle from service workers
-    this.ctx.session.serviceWorkers.on('running-status-changed' as any, ({ runningStatus, versionId }: any) => {
-      if (runningStatus !== 'starting') return
-      const sw = (this.ctx.session as any).serviceWorkers.getWorkerFromVersionID(versionId)
-      if (sw?.scope?.startsWith('chrome-extension://')) {
-        sw.ipc.on('crx-runtime-response', handler)
-      }
-    })
+    // Response handler is now set up in setupServiceWorkerListeners
   }
 
   private sendMessage = async (
@@ -182,27 +184,17 @@ export class RuntimeAPI extends EventEmitter {
   private setupPortHandlers() {
     // Handle port messages from renderers (popup, etc.)
     ipcMain.on('crx-port-msg', (event, extensionId: string, portId: string, message: any) => {
-      console.log('[crx-runtime] Port message from popup:', portId, message)
       const port = this.ports.get(portId)
-      if (!port) {
-        console.log('[crx-runtime] Port message for unknown port:', portId, 'known ports:', Array.from(this.ports.keys()))
-        return
-      }
+      if (!port) return
 
       // Forward message to service worker (MV3) or background page (MV2)
       if (port.serviceWorker) {
-        console.log('[crx-runtime] Forwarding to SW:', portId)
         port.serviceWorker.send('crx-port-message', portId, message)
       } else {
         // MV2 - send directly to background page webContents
-        console.log('[crx-runtime] Forwarding to background page:', portId)
         const bgPage = this.findBackgroundPage(port.extensionId)
         if (bgPage) {
-          if (!this.safeSend(bgPage, 'crx-runtime.port-message', portId, message)) {
-            console.log('[crx-runtime] Failed to forward port message to background page')
-          }
-        } else {
-          console.log('[crx-runtime] No background page found for port message')
+          this.safeSend(bgPage, 'crx-runtime.port-message', portId, message)
         }
       }
     })
@@ -211,8 +203,6 @@ export class RuntimeAPI extends EventEmitter {
     ipcMain.on('crx-port-disconnect', (event, extensionId: string, portId: string) => {
       const port = this.ports.get(portId)
       if (!port) return
-
-      console.log('[crx-runtime] Port disconnect from popup:', portId)
 
       // Notify service worker or background page of disconnect
       if (port.serviceWorker) {
@@ -229,23 +219,17 @@ export class RuntimeAPI extends EventEmitter {
 
     // Handle port messages from background page back to popup
     ipcMain.on('crx-port-message-to-popup', (event, portId: string, message: any) => {
-      console.log('[crx-runtime] Port message from background to popup:', portId, message)
       const port = this.ports.get(portId)
-      if (!port) {
-        console.log('[crx-runtime] Unknown port for bg->popup message:', portId)
-        return
-      }
+      if (!port) return
 
       // Forward to popup
       if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-        console.log('[crx-runtime] Forwarding bg message to popup:', portId)
         port.senderWebContents.send(`crx-port-msg-${portId}`, message)
       }
     })
 
     // Handle port disconnects from background page
     ipcMain.on('crx-port-disconnect-from-bg', (event, portId: string) => {
-      console.log('[crx-runtime] Port disconnect from background:', portId)
       const port = this.ports.get(portId)
       if (!port) return
 
@@ -257,46 +241,84 @@ export class RuntimeAPI extends EventEmitter {
       this.ports.delete(portId)
     })
 
-    // Handle port messages from service workers
-    this.ctx.session.serviceWorkers.on('running-status-changed' as any, ({ runningStatus, versionId }: any) => {
-      if (runningStatus !== 'starting') return
-      const sw = (this.ctx.session as any).serviceWorkers.getWorkerFromVersionID(versionId)
-      if (sw?.scope?.startsWith('chrome-extension://')) {
-        console.log('[crx-runtime] Setting up SW IPC listeners for scope:', sw.scope)
+    // Service worker IPC listeners are now set up in setupServiceWorkerListeners
+  }
 
-        // Listen for port messages from SW
-        sw.ipc.on('crx-port-message', (_event: any, portId: string, message: any) => {
-          console.log('[crx-runtime] Port message from SW:', portId, message)
-          const port = this.ports.get(portId)
-          if (!port) {
-            console.log('[crx-runtime] Unknown port from SW:', portId)
-            return
-          }
-
-          // Forward to renderer (only if sender is a WebContents)
-          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-            console.log('[crx-runtime] Forwarding to popup:', portId)
-            port.senderWebContents.send(`crx-port-msg-${portId}`, message)
-          } else {
-            console.log('[crx-runtime] Cannot forward - sender not WebContents or destroyed')
-          }
-        })
-
-        // Listen for port disconnects from SW
-        sw.ipc.on('crx-port-disconnect', (_event: any, portId: string) => {
-          console.log('[crx-runtime] Port disconnect from SW:', portId)
-          const port = this.ports.get(portId)
-          if (!port) return
-
-          // Notify renderer of disconnect (only if sender is a WebContents)
-          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-            port.senderWebContents.send(`crx-port-disconnect-${portId}`)
-          }
-
-          this.ports.delete(portId)
-        })
+  /**
+   * Consolidated service worker IPC listener setup with proper tracking and cleanup.
+   * This prevents listener accumulation when service workers restart.
+   */
+  private setupServiceWorkerListeners() {
+    // Response handler for runtime messages
+    const responseHandler = (_event: Electron.IpcMainEvent, messageId: string, response: any) => {
+      d('received response for message %s: %o', messageId, response)
+      const pending = this.pendingResponses.get(messageId)
+      if (pending) {
+        clearTimeout(pending.timeout)
+        this.pendingResponses.delete(messageId)
+        pending.resolve(response)
       }
+    }
+
+    this.ctx.session.serviceWorkers.on('running-status-changed' as any, ({ runningStatus, versionId }: any) => {
+      // Cleanup when worker stops
+      if (runningStatus === 'stopped') {
+        this.registeredWorkers.delete(versionId)
+        return
+      }
+
+      if (runningStatus !== 'starting') return
+
+      // Prevent duplicate registrations for the same versionId
+      if (this.registeredWorkers.has(versionId)) return
+
+      const sw = (this.ctx.session as any).serviceWorkers.getWorkerFromVersionID(versionId)
+      if (!sw?.scope?.startsWith('chrome-extension://')) return
+
+      this.registeredWorkers.set(versionId, true)
+      d('setting up SW IPC listeners for scope: %s', sw.scope)
+
+      // Runtime response handler
+      sw.ipc.on('crx-runtime-response', responseHandler)
+
+      // Port message handler
+      sw.ipc.on('crx-port-message', (_event: any, portId: string, message: any) => {
+        const port = this.ports.get(portId)
+        if (!port) return
+
+        // Forward to renderer (only if sender is a WebContents)
+        if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+          port.senderWebContents.send(`crx-port-msg-${portId}`, message)
+        }
+      })
+
+      // Port disconnect handler
+      sw.ipc.on('crx-port-disconnect', (_event: any, portId: string) => {
+        const port = this.ports.get(portId)
+        if (!port) return
+
+        // Notify renderer of disconnect (only if sender is a WebContents)
+        if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+          port.senderWebContents.send(`crx-port-disconnect-${portId}`)
+        }
+
+        this.ports.delete(portId)
+      })
     })
+  }
+
+  /**
+   * Periodically clean up stale ports where the sender has been destroyed.
+   */
+  private setupPortCleanup() {
+    setInterval(() => {
+      for (const [portId, port] of this.ports) {
+        if (isWebContents(port.senderWebContents) && port.senderWebContents.isDestroyed()) {
+          d('Cleaning up stale port %s', portId)
+          this.ports.delete(portId)
+        }
+      }
+    }, 60 * 1000) // Clean up every 60 seconds
   }
 
   // Find the background page webContents for an extension
@@ -316,12 +338,10 @@ export class RuntimeAPI extends EventEmitter {
           // Try to access mainFrame - if this throws, the frame is disposed
           const frame = wc.mainFrame
           if (!frame) {
-            console.log('[crx-runtime] Background page has no mainFrame:', extensionId)
             continue
           }
           return wc
         } catch (e) {
-          console.log('[crx-runtime] Background page frame not accessible:', extensionId, e)
           continue
         }
       }
@@ -333,13 +353,11 @@ export class RuntimeAPI extends EventEmitter {
   private safeSend(wc: Electron.WebContents, channel: string, ...args: any[]): boolean {
     try {
       if (wc.isDestroyed()) {
-        console.log('[crx-runtime] Cannot send - webContents destroyed')
         return false
       }
       wc.send(channel, ...args)
       return true
     } catch (e) {
-      console.log('[crx-runtime] Error sending to webContents:', e)
       return false
     }
   }
@@ -351,8 +369,6 @@ export class RuntimeAPI extends EventEmitter {
   ): Promise<void> => {
     const extensionId = event.extension.id
     const portName = connectInfo?.name || ''
-
-    console.log('[crx-runtime] connect from', extensionId, 'portId:', portId, 'name:', portName)
 
     // Create sender info
     const sender: chrome.runtime.MessageSender = {
@@ -381,14 +397,11 @@ export class RuntimeAPI extends EventEmitter {
       senderUrl: sender.url || '',
       serviceWorker: undefined // Will be set if SW is used
     })
-    console.log('[crx-runtime] Port stored:', portId)
 
     // Try service worker first (MV3), then background page (MV2)
     const scope = `chrome-extension://${extensionId}/`
     try {
-      console.log('[crx-runtime] Trying SW for scope:', scope)
       const serviceWorker = await this.ctx.session.serviceWorkers.startWorkerForScope(scope)
-      console.log('[crx-runtime] SW started, sending onConnect')
 
       // Update port with service worker reference
       const port = this.ports.get(portId)
@@ -397,22 +410,12 @@ export class RuntimeAPI extends EventEmitter {
       }
 
       serviceWorker.send('crx-runtime.onConnect', portId, portName, sender)
-      console.log('[crx-runtime] onConnect sent to SW')
     } catch (error) {
-      console.log('[crx-runtime] SW failed, trying background page:', error)
-
       // MV2 extension - find and send directly to background page webContents
       // This avoids stale listener references in the router
       const bgPage = this.findBackgroundPage(extensionId)
       if (bgPage) {
-        console.log('[crx-runtime] Found background page, sending onConnect directly')
-        if (this.safeSend(bgPage, 'crx-runtime.onConnect', portId, portName, sender)) {
-          console.log('[crx-runtime] onConnect sent to background page')
-        } else {
-          console.log('[crx-runtime] Failed to send onConnect to background page')
-        }
-      } else {
-        console.log('[crx-runtime] No background page found for extension:', extensionId)
+        this.safeSend(bgPage, 'crx-runtime.onConnect', portId, portName, sender)
       }
     }
   }

@@ -49,19 +49,16 @@ function generateSWPolyfill() {
 
   const electron = globalThis.electron;
   if (!electron) {
-    console.warn('[electron-chrome-extensions] electron bridge not available in SW');
     return;
   }
 
   const chrome = globalThis.chrome;
   if (!chrome || !chrome.runtime) {
-    console.warn('[electron-chrome-extensions] chrome.runtime not available in SW');
     return;
   }
 
   const extensionId = chrome.runtime.id;
   if (!extensionId) {
-    console.warn('[electron-chrome-extensions] no extension ID in SW');
     return;
   }
 
@@ -76,7 +73,6 @@ function generateSWPolyfill() {
       var callback = typeof args[args.length - 1] === 'function' ? args.pop() : undefined;
 
       if (options.noop) {
-        console.warn(fnName + ' is not yet implemented.');
         if (callback) callback(options.defaultResponse);
         return Promise.resolve(options.defaultResponse);
       }
@@ -132,7 +128,6 @@ function generateSWPolyfill() {
         });
       }
     } catch (e) {
-      console.warn('[electron-chrome-extensions] Failed to define', prop, e);
       // Last resort: direct assignment
       try { obj[prop] = value; } catch (e2) { /* ignore */ }
     }
@@ -212,7 +207,6 @@ function generateSWPolyfill() {
   var tabsBase = chrome.tabs || {};
   // Always use our tabs.query implementation for proper currentWindow resolution
   var ourTabsQuery = invokeExtension('tabs.query');
-  console.log('[electron-chrome-extensions] SW: Overriding tabs.query with our implementation');
 
   if (!chrome.tabs || !chrome.tabs.onCreated) {
     chrome.tabs = Object.assign({}, tabsBase, {
@@ -342,7 +336,6 @@ function generateSWPolyfill() {
         responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback;
       }
 
-      console.log('[electron-chrome-extensions] runtime.sendMessage:', message);
 
       // Use our custom IPC-based implementation
       var promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options);
@@ -351,7 +344,6 @@ function generateSWPolyfill() {
         promise.then(function(result) {
           responseCallback(result);
         }).catch(function(e) {
-          console.error('[electron-chrome-extensions] sendMessage error:', e);
           responseCallback(undefined);
         });
         return true; // Indicate async response
@@ -366,13 +358,10 @@ function generateSWPolyfill() {
 
     // Listen for messages from our IPC using the electron bridge
     electron.onIpc('crx-runtime.onMessage', function(messageId, message, sender) {
-      console.log('[electron-chrome-extensions] SW received message:', messageId, message);
-
       var responded = false;
       var sendResponse = function(response) {
         if (!responded) {
           responded = true;
-          console.log('[electron-chrome-extensions] SW sending response:', messageId, response);
           electron.sendIpc('crx-runtime-response', messageId, response);
         }
       };
@@ -390,12 +379,11 @@ function generateSWPolyfill() {
             result.then(function(promiseResult) {
               sendResponse(promiseResult);
             }).catch(function(e) {
-              console.error('[electron-chrome-extensions] onMessage promise error:', e);
               sendResponse(undefined);
             });
           }
         } catch (e) {
-          console.error('[electron-chrome-extensions] onMessage listener error:', e);
+          // Ignore listener errors
         }
       }
 
@@ -408,7 +396,6 @@ function generateSWPolyfill() {
     // Override onMessage to use our listener array
     chrome.runtime.onMessage = {
       addListener: function(callback) {
-        console.log('[electron-chrome-extensions] SW onMessage.addListener called');
         onMessageListeners.push(callback);
         // Also register with original if it exists (for Electron's built-in messaging)
         if (originalOnMessage && originalOnMessage.addListener) {
@@ -448,14 +435,12 @@ function generateSWPolyfill() {
 
     SWPort.prototype.postMessage = function(message) {
       if (!this._connected) return;
-      console.log('[electron-chrome-extensions] SW port.postMessage:', this._portId, message);
       electron.sendIpc('crx-port-message', this._portId, message);
     };
 
     SWPort.prototype.disconnect = function() {
       if (!this._connected) return;
       this._connected = false;
-      console.log('[electron-chrome-extensions] SW port.disconnect:', this._portId);
       electron.sendIpc('crx-port-disconnect', this._portId);
       delete activePorts[this._portId];
     };
@@ -465,7 +450,7 @@ function generateSWPolyfill() {
         try {
           this._messageListeners[i](message, this);
         } catch (e) {
-          console.error('[electron-chrome-extensions] port.onMessage error:', e);
+          // Ignore listener errors
         }
       }
     };
@@ -476,7 +461,7 @@ function generateSWPolyfill() {
         try {
           this._disconnectListeners[i](this);
         } catch (e) {
-          console.error('[electron-chrome-extensions] port.onDisconnect error:', e);
+          // Ignore listener errors
         }
       }
       delete activePorts[this._portId];
@@ -551,8 +536,6 @@ function generateSWPolyfill() {
 
     // Listen for onConnect from main process
     electron.onIpc('crx-runtime.onConnect', function(portId, name, sender) {
-      console.log('[electron-chrome-extensions] SW received onConnect:', portId, name);
-
       var port = new SWPort(portId, name, sender);
       port._initEvents();
       activePorts[portId] = port;
@@ -562,14 +545,13 @@ function generateSWPolyfill() {
         try {
           onConnectListeners[i](port);
         } catch (e) {
-          console.error('[electron-chrome-extensions] onConnect listener error:', e);
+          // Ignore listener errors
         }
       }
     });
 
     // Listen for port messages from main process
     electron.onIpc('crx-port-message', function(portId, message) {
-      console.log('[electron-chrome-extensions] SW received port message:', portId, message);
       var port = activePorts[portId];
       if (port) {
         port._receiveMessage(message);
@@ -578,7 +560,6 @@ function generateSWPolyfill() {
 
     // Listen for port disconnects from main process
     electron.onIpc('crx-port-disconnect', function(portId) {
-      console.log('[electron-chrome-extensions] SW received port disconnect:', portId);
       var port = activePorts[portId];
       if (port) {
         port._handleDisconnect();
@@ -588,7 +569,6 @@ function generateSWPolyfill() {
     // Override onConnect
     chrome.runtime.onConnect = {
       addListener: function(callback) {
-        console.log('[electron-chrome-extensions] SW onConnect.addListener called');
         onConnectListeners.push(callback);
       },
       removeListener: function(callback) {
@@ -689,12 +669,8 @@ function generateSWPolyfill() {
     if (chrome.runtime.onConnect) globalThis.browser.runtime.onConnect = chrome.runtime.onConnect;
   }
 
-  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand, 'onConnect:', !!chrome.runtime.onConnect);
-
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code
-
-  console.log('[electron-chrome-extensions] SW polyfill setup complete, chrome.commands:', !!chrome.commands);
 
 })();
 `;
@@ -1287,20 +1263,13 @@ var BrowserActionAPI = class {
         alignment
       });
       if (this.popup.browserWindow) {
-        console.log("[browser-action] Registering popup:", {
-          popupWindowId: this.popup.browserWindow.id,
-          parentWindowId: win.id
-        });
         this.ctx.store.registerPopup(this.popup.browserWindow, win);
         this.popup.browserWindow.once("closed", () => {
-          console.log("[browser-action] Popup closed, unregistering");
           if (this.popup?.browserWindow) {
             this.ctx.store.unregisterPopup(this.popup.browserWindow);
           }
         });
         this.popup.startLoading();
-      } else {
-        console.log("[browser-action] WARNING: popup.browserWindow is undefined!");
       }
       d2(`opened popup: ${popupUrl}`);
       this.ctx.emit("browser-action-popup-created", this.popup);
@@ -1685,32 +1654,11 @@ var _TabsAPI = class _TabsAPI {
   }
   query(event, info = {}) {
     const isSet = (value) => typeof value !== "undefined";
-    console.log("[tabs.query] ========== QUERY CALLED ==========");
-    console.log("[tabs.query] Event type:", event.type, "Has sender:", !!event.sender);
-    console.log("[tabs.query] Query info:", JSON.stringify(info));
-    console.log("[tabs.query] Store state:", {
-      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
-      totalTabs: this.ctx.store.tabs.size,
-      totalWindows: this.ctx.store.windows.size,
-      popupWindowsCount: this.ctx.store.popupWindows.size
-    });
     let resolvedWindowId = this.ctx.store.lastFocusedWindowId;
-    console.log("[tabs.query] Initial state:", {
-      eventType: event.type,
-      lastFocusedWindowId: this.ctx.store.lastFocusedWindowId,
-      windowsCount: this.ctx.store.windows.size,
-      tabsCount: this.ctx.store.tabs.size
-    });
     if (event.type === "frame" && event.sender) {
       const senderWindow = import_electron4.BrowserWindow.fromWebContents(event.sender);
-      console.log("[tabs.query] Frame sender window:", {
-        senderWindowId: senderWindow?.id,
-        senderWindowDestroyed: senderWindow?.isDestroyed(),
-        isPopup: senderWindow ? this.ctx.store.isPopup(senderWindow) : false
-      });
       if (senderWindow && this.ctx.store.isPopup(senderWindow)) {
         const parentWindow = this.ctx.store.getPopupParent(senderWindow);
-        console.log("[tabs.query] Found popup, parent window:", parentWindow?.id);
         if (parentWindow) {
           resolvedWindowId = parentWindow.id;
         }
@@ -1721,7 +1669,6 @@ var _TabsAPI = class _TabsAPI {
         if (win.id === resolvedWindowId && this.ctx.store.isPopup(win)) {
           const parentWindow = this.ctx.store.getPopupParent(win);
           if (parentWindow) {
-            console.log("[tabs.query] SW: lastFocused was popup, using parent:", parentWindow.id);
             resolvedWindowId = parentWindow.id;
           }
           break;
@@ -1729,7 +1676,6 @@ var _TabsAPI = class _TabsAPI {
       }
     }
     if (typeof resolvedWindowId !== "number") {
-      console.log("[tabs.query] No resolvedWindowId, looking for fallback");
       const firstWindowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
         return Array.from(this.ctx.store.tabs).some(
           (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
@@ -1737,7 +1683,6 @@ var _TabsAPI = class _TabsAPI {
       });
       if (firstWindowWithTabs) {
         resolvedWindowId = firstWindowWithTabs.id;
-        console.log("[tabs.query] Using fallback window:", resolvedWindowId);
       }
     }
     if (typeof resolvedWindowId === "number") {
@@ -1745,7 +1690,6 @@ var _TabsAPI = class _TabsAPI {
         (tab) => this.ctx.store.tabToWindow.get(tab)?.id === resolvedWindowId
       );
       if (!hasTabs) {
-        console.log("[tabs.query] resolvedWindowId has no tabs, finding alternative");
         const windowWithTabs = Array.from(this.ctx.store.windows).find((win) => {
           return !this.ctx.store.isPopup(win) && Array.from(this.ctx.store.tabs).some(
             (tab) => this.ctx.store.tabToWindow.get(tab)?.id === win.id
@@ -1753,11 +1697,9 @@ var _TabsAPI = class _TabsAPI {
         });
         if (windowWithTabs) {
           resolvedWindowId = windowWithTabs.id;
-          console.log("[tabs.query] Using window with tabs:", resolvedWindowId);
         }
       }
     }
-    console.log("[tabs.query] Final resolvedWindowId:", resolvedWindowId);
     const filteredTabs = Array.from(this.ctx.store.tabs).map(this.createTabDetails.bind(this)).filter((tab) => {
       if (!tab) return false;
       if (isSet(info.active) && info.active !== tab.active) return false;
@@ -1801,14 +1743,6 @@ var _TabsAPI = class _TabsAPI {
       }
       return tab;
     });
-    console.log("[tabs.query] Result:", filteredTabs.length, "tabs, first:", filteredTabs[0]?.url?.substring(0, 50));
-    if (filteredTabs.length === 0) {
-      console.log("[tabs.query] WARNING: No tabs matched! All tabs in store:");
-      Array.from(this.ctx.store.tabs).forEach((tab, i) => {
-        const win = this.ctx.store.tabToWindow.get(tab);
-        console.log(`  [${i}] id=${tab.id}, windowId=${win?.id}, active=${this.ctx.store.getActiveTabFromWebContents(tab)?.id === tab.id}, url=${tab.getURL()?.substring(0, 50)}`);
-      });
-    }
     return filteredTabs;
   }
   reload(event, arg1, arg2) {
@@ -2797,6 +2731,8 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
     this.pendingResponses = /* @__PURE__ */ new Map();
     // Active port connections: portId -> PortConnection
     this.ports = /* @__PURE__ */ new Map();
+    // Track registered service workers by versionId to prevent duplicate listeners
+    this.registeredWorkers = /* @__PURE__ */ new Map();
     this.sendMessage = async (event, message, options) => {
       const extensionId = event.extension.id;
       const messageId = (0, import_node_crypto.randomUUID)();
@@ -2869,7 +2805,6 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
     this.connect = async (event, portId, connectInfo) => {
       const extensionId = event.extension.id;
       const portName = connectInfo?.name || "";
-      console.log("[crx-runtime] connect from", extensionId, "portId:", portId, "name:", portName);
       const sender = {
         id: extensionId,
         url: event.type === "frame" ? event.sender.getURL() : `chrome-extension://${extensionId}/`
@@ -2892,30 +2827,18 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
         serviceWorker: void 0
         // Will be set if SW is used
       });
-      console.log("[crx-runtime] Port stored:", portId);
       const scope = `chrome-extension://${extensionId}/`;
       try {
-        console.log("[crx-runtime] Trying SW for scope:", scope);
         const serviceWorker = await this.ctx.session.serviceWorkers.startWorkerForScope(scope);
-        console.log("[crx-runtime] SW started, sending onConnect");
         const port = this.ports.get(portId);
         if (port) {
           port.serviceWorker = serviceWorker;
         }
         serviceWorker.send("crx-runtime.onConnect", portId, portName, sender);
-        console.log("[crx-runtime] onConnect sent to SW");
       } catch (error) {
-        console.log("[crx-runtime] SW failed, trying background page:", error);
         const bgPage = this.findBackgroundPage(extensionId);
         if (bgPage) {
-          console.log("[crx-runtime] Found background page, sending onConnect directly");
-          if (this.safeSend(bgPage, "crx-runtime.onConnect", portId, portName, sender)) {
-            console.log("[crx-runtime] onConnect sent to background page");
-          } else {
-            console.log("[crx-runtime] Failed to send onConnect to background page");
-          }
-        } else {
-          console.log("[crx-runtime] No background page found for extension:", extensionId);
+          this.safeSend(bgPage, "crx-runtime.onConnect", portId, portName, sender);
         }
       }
     };
@@ -2928,6 +2851,8 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
     handle("runtime.connect", this.connect.bind(this));
     this.setupResponseHandler();
     this.setupPortHandlers();
+    this.setupServiceWorkerListeners();
+    this.setupPortCleanup();
   }
   setupResponseHandler() {
     const handler = (_event, messageId, response) => {
@@ -2940,41 +2865,23 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
       }
     };
     import_electron8.ipcMain.on("crx-runtime-response", handler);
-    this.ctx.session.serviceWorkers.on("running-status-changed", ({ runningStatus, versionId }) => {
-      if (runningStatus !== "starting") return;
-      const sw = this.ctx.session.serviceWorkers.getWorkerFromVersionID(versionId);
-      if (sw?.scope?.startsWith("chrome-extension://")) {
-        sw.ipc.on("crx-runtime-response", handler);
-      }
-    });
   }
   setupPortHandlers() {
     import_electron8.ipcMain.on("crx-port-msg", (event, extensionId, portId, message) => {
-      console.log("[crx-runtime] Port message from popup:", portId, message);
       const port = this.ports.get(portId);
-      if (!port) {
-        console.log("[crx-runtime] Port message for unknown port:", portId, "known ports:", Array.from(this.ports.keys()));
-        return;
-      }
+      if (!port) return;
       if (port.serviceWorker) {
-        console.log("[crx-runtime] Forwarding to SW:", portId);
         port.serviceWorker.send("crx-port-message", portId, message);
       } else {
-        console.log("[crx-runtime] Forwarding to background page:", portId);
         const bgPage = this.findBackgroundPage(port.extensionId);
         if (bgPage) {
-          if (!this.safeSend(bgPage, "crx-runtime.port-message", portId, message)) {
-            console.log("[crx-runtime] Failed to forward port message to background page");
-          }
-        } else {
-          console.log("[crx-runtime] No background page found for port message");
+          this.safeSend(bgPage, "crx-runtime.port-message", portId, message);
         }
       }
     });
     import_electron8.ipcMain.on("crx-port-disconnect", (event, extensionId, portId) => {
       const port = this.ports.get(portId);
       if (!port) return;
-      console.log("[crx-runtime] Port disconnect from popup:", portId);
       if (port.serviceWorker) {
         port.serviceWorker.send("crx-port-disconnect", portId);
       } else {
@@ -2986,19 +2893,13 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
       this.ports.delete(portId);
     });
     import_electron8.ipcMain.on("crx-port-message-to-popup", (event, portId, message) => {
-      console.log("[crx-runtime] Port message from background to popup:", portId, message);
       const port = this.ports.get(portId);
-      if (!port) {
-        console.log("[crx-runtime] Unknown port for bg->popup message:", portId);
-        return;
-      }
+      if (!port) return;
       if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-        console.log("[crx-runtime] Forwarding bg message to popup:", portId);
         port.senderWebContents.send(`crx-port-msg-${portId}`, message);
       }
     });
     import_electron8.ipcMain.on("crx-port-disconnect-from-bg", (event, portId) => {
-      console.log("[crx-runtime] Port disconnect from background:", portId);
       const port = this.ports.get(portId);
       if (!port) return;
       if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
@@ -3006,36 +2907,62 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
       }
       this.ports.delete(portId);
     });
-    this.ctx.session.serviceWorkers.on("running-status-changed", ({ runningStatus, versionId }) => {
-      if (runningStatus !== "starting") return;
-      const sw = this.ctx.session.serviceWorkers.getWorkerFromVersionID(versionId);
-      if (sw?.scope?.startsWith("chrome-extension://")) {
-        console.log("[crx-runtime] Setting up SW IPC listeners for scope:", sw.scope);
-        sw.ipc.on("crx-port-message", (_event, portId, message) => {
-          console.log("[crx-runtime] Port message from SW:", portId, message);
-          const port = this.ports.get(portId);
-          if (!port) {
-            console.log("[crx-runtime] Unknown port from SW:", portId);
-            return;
-          }
-          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-            console.log("[crx-runtime] Forwarding to popup:", portId);
-            port.senderWebContents.send(`crx-port-msg-${portId}`, message);
-          } else {
-            console.log("[crx-runtime] Cannot forward - sender not WebContents or destroyed");
-          }
-        });
-        sw.ipc.on("crx-port-disconnect", (_event, portId) => {
-          console.log("[crx-runtime] Port disconnect from SW:", portId);
-          const port = this.ports.get(portId);
-          if (!port) return;
-          if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
-            port.senderWebContents.send(`crx-port-disconnect-${portId}`);
-          }
-          this.ports.delete(portId);
-        });
+  }
+  /**
+   * Consolidated service worker IPC listener setup with proper tracking and cleanup.
+   * This prevents listener accumulation when service workers restart.
+   */
+  setupServiceWorkerListeners() {
+    const responseHandler = (_event, messageId, response) => {
+      d8("received response for message %s: %o", messageId, response);
+      const pending = this.pendingResponses.get(messageId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        this.pendingResponses.delete(messageId);
+        pending.resolve(response);
       }
+    };
+    this.ctx.session.serviceWorkers.on("running-status-changed", ({ runningStatus, versionId }) => {
+      if (runningStatus === "stopped") {
+        this.registeredWorkers.delete(versionId);
+        return;
+      }
+      if (runningStatus !== "starting") return;
+      if (this.registeredWorkers.has(versionId)) return;
+      const sw = this.ctx.session.serviceWorkers.getWorkerFromVersionID(versionId);
+      if (!sw?.scope?.startsWith("chrome-extension://")) return;
+      this.registeredWorkers.set(versionId, true);
+      d8("setting up SW IPC listeners for scope: %s", sw.scope);
+      sw.ipc.on("crx-runtime-response", responseHandler);
+      sw.ipc.on("crx-port-message", (_event, portId, message) => {
+        const port = this.ports.get(portId);
+        if (!port) return;
+        if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+          port.senderWebContents.send(`crx-port-msg-${portId}`, message);
+        }
+      });
+      sw.ipc.on("crx-port-disconnect", (_event, portId) => {
+        const port = this.ports.get(portId);
+        if (!port) return;
+        if (isWebContents(port.senderWebContents) && !port.senderWebContents.isDestroyed()) {
+          port.senderWebContents.send(`crx-port-disconnect-${portId}`);
+        }
+        this.ports.delete(portId);
+      });
     });
+  }
+  /**
+   * Periodically clean up stale ports where the sender has been destroyed.
+   */
+  setupPortCleanup() {
+    setInterval(() => {
+      for (const [portId, port] of this.ports) {
+        if (isWebContents(port.senderWebContents) && port.senderWebContents.isDestroyed()) {
+          d8("Cleaning up stale port %s", portId);
+          this.ports.delete(portId);
+        }
+      }
+    }, 60 * 1e3);
   }
   // Find the background page webContents for an extension
   findBackgroundPage(extensionId) {
@@ -3050,12 +2977,10 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
         try {
           const frame = wc.mainFrame;
           if (!frame) {
-            console.log("[crx-runtime] Background page has no mainFrame:", extensionId);
             continue;
           }
           return wc;
         } catch (e) {
-          console.log("[crx-runtime] Background page frame not accessible:", extensionId, e);
           continue;
         }
       }
@@ -3066,13 +2991,11 @@ var RuntimeAPI = class extends import_node_events3.EventEmitter {
   safeSend(wc, channel, ...args) {
     try {
       if (wc.isDestroyed()) {
-        console.log("[crx-runtime] Cannot send - webContents destroyed");
         return false;
       }
       wc.send(channel, ...args);
       return true;
     } catch (e) {
-      console.log("[crx-runtime] Error sending to webContents:", e);
       return false;
     }
   }
@@ -3350,7 +3273,7 @@ var gRoutingDelegate;
 var RoutingDelegate = class _RoutingDelegate {
   constructor() {
     this.sessionMap = /* @__PURE__ */ new WeakMap();
-    this.workers = /* @__PURE__ */ new WeakSet();
+    this.workerVersions = /* @__PURE__ */ new Map();
     this.onRouterMessage = async (event, extensionId, handlerName, ...args) => {
       d9(`received '${handlerName}'`, args);
       const observer = this.sessionMap.get(getSessionFromEvent(event));
@@ -3400,18 +3323,22 @@ var RoutingDelegate = class _RoutingDelegate {
       runningStatus,
       versionId
     }) => {
+      if (runningStatus === "stopped") {
+        this.workerVersions.delete(versionId);
+        return;
+      }
       if (runningStatus !== "starting") return;
+      if (this.workerVersions.has(versionId)) return;
       const serviceWorker = observer.session.serviceWorkers.getWorkerFromVersionID(
         versionId
       );
-      if (serviceWorker?.scope?.startsWith("chrome-extension://") && !this.workers.has(serviceWorker)) {
-        d9(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`);
-        this.workers.add(serviceWorker);
-        serviceWorker.ipc.handle("crx-msg", this.onRouterMessage);
-        serviceWorker.ipc.handle("crx-msg-remote", this.onRemoteMessage);
-        serviceWorker.ipc.on("crx-add-listener", this.onAddListener);
-        serviceWorker.ipc.on("crx-remove-listener", this.onRemoveListener);
-      }
+      if (!serviceWorker?.scope?.startsWith("chrome-extension://")) return;
+      this.workerVersions.set(versionId, true);
+      d9(`listening to service worker [versionId:${versionId}, scope:${serviceWorker.scope}]`);
+      serviceWorker.ipc.handle("crx-msg", this.onRouterMessage);
+      serviceWorker.ipc.handle("crx-msg-remote", this.onRemoteMessage);
+      serviceWorker.ipc.on("crx-add-listener", this.onAddListener);
+      serviceWorker.ipc.on("crx-remove-listener", this.onRemoveListener);
     };
     observer.session.serviceWorkers.on("running-status-changed", maybeListenForWorkerEvents);
   }
@@ -3494,7 +3421,6 @@ var ExtensionRouter = class {
   }
   addListener(listener, extensionId, eventName) {
     const { listeners, session: session2 } = this;
-    console.log("[router] addListener called:", eventName, "extensionId:", extensionId, "type:", listener.type);
     const sessionExtensions = session2.extensions || session2;
     const extension = sessionExtensions.getExtension(extensionId);
     if (!extension) {
@@ -3507,10 +3433,8 @@ var ExtensionRouter = class {
     const existingEventListener = eventListeners.find(eventListenerEquals(listener));
     if (existingEventListener) {
       d9(`ignoring existing '${eventName}' event listener for ${extensionId}`);
-      console.log("[router] Ignoring existing listener for:", eventName);
     } else {
       d9(`adding '${eventName}' event listener for ${extensionId}`);
-      console.log("[router] Added listener for:", eventName, "total listeners:", eventListeners.length + 1);
       eventListeners.push(listener);
       if (listener.type === "frame" && listener.host) {
         this.observeListenerHost(listener.host);
@@ -3521,7 +3445,7 @@ var ExtensionRouter = class {
     const { listeners } = this;
     const eventListeners = listeners.get(eventName);
     if (!eventListeners) {
-      console.error(`event listener not registered for '${eventName}'`);
+      d9(`event listener not registered for '${eventName}'`);
       return;
     }
     const index = eventListeners.findIndex(eventListenerEquals(listener));
@@ -3541,13 +3465,6 @@ var ExtensionRouter = class {
     return handler;
   }
   async onExtensionMessage(event, extensionId, handlerName, ...args) {
-    if (handlerName === "tabs.query") {
-      console.log("[router] tabs.query received:", {
-        eventType: event.type,
-        extensionId,
-        args: JSON.stringify(args)
-      });
-    }
     const { session: session2 } = this;
     const eventSession = getSessionFromEvent(event);
     const eventSessionExtensions = eventSession.extensions || eventSession;
@@ -3594,10 +3511,7 @@ var ExtensionRouter = class {
     const { listeners } = this;
     let eventListeners = listeners.get(eventName);
     const ipcName = `crx-${eventName}`;
-    console.log("[router] sendEvent:", eventName, "target:", targetExtensionId, "listeners:", eventListeners?.length || 0);
-    console.log("[router] All registered events:", Array.from(listeners.keys()));
     if (!eventListeners || eventListeners.length === 0) {
-      console.log("[router] No listeners for event:", eventName);
       return;
     }
     let sentCount = 0;
@@ -3616,7 +3530,7 @@ var ExtensionRouter = class {
         });
       } else {
         if (listener.host.isDestroyed()) {
-          console.error(`Unable to send '${eventName}' to extension host for ${extensionId}`);
+          d9(`Unable to send '${eventName}' to extension host for ${extensionId}`);
           return;
         }
         listener.host.send(ipcName, ...args);
@@ -3908,22 +3822,17 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
         const endIdx = content.indexOf(polyfillEndMarker, startIdx);
         if (endIdx !== -1) {
           content = content.substring(endIdx + polyfillEndMarker.length);
-          console.log(`[electron-chrome-extensions] Stripped old polyfill from ${extension.name}`);
         }
       }
       const modifiedContent = this.swPolyfill + "\n" + content;
       const { writeFileSync } = await import("node:fs");
       writeFileSync(filePath, modifiedContent, "utf-8");
-      console.log(`[electron-chrome-extensions] Injected polyfill into ${extension.name} SW script`);
       const scope = `chrome-extension://${extension.id}/`;
       try {
         await this.ctx.session.serviceWorkers.startWorkerForScope(scope);
-        console.log(`[electron-chrome-extensions] Restarted SW for ${extension.name}`);
       } catch (err) {
-        console.log(`[electron-chrome-extensions] SW for ${extension.name} will load polyfill on next start`);
       }
     } catch (err) {
-      console.error(`[electron-chrome-extensions] Failed to inject polyfill into ${extension.name}:`, err.message);
     }
   }
   async prependPreload(modulePath) {
@@ -3984,22 +3893,10 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
     };
     try {
       const isHandled = session2.protocol.isProtocolHandled("chrome-extension");
-      console.log("[electron-chrome-extensions] chrome-extension:// protocol already handled:", isHandled);
       if (isHandled) {
-        console.log("[electron-chrome-extensions] Attempting to unhandle chrome-extension://");
         session2.protocol.unhandle("chrome-extension");
-        console.log("[electron-chrome-extensions] Successfully unhandled chrome-extension://");
       }
-      console.log("[electron-chrome-extensions] Registering chrome-extension:// protocol handler");
-      session2.webRequest.onBeforeRequest(
-        { urls: ["chrome-extension://*/*"] },
-        (details, callback) => {
-          console.log("[electron-chrome-extensions] webRequest intercepted:", details.url, "type:", details.resourceType);
-          callback({});
-        }
-      );
       session2.protocol.handle("chrome-extension", (request) => {
-        console.log("[electron-chrome-extensions] Protocol handler called for:", request.url);
         let url;
         try {
           url = new URL(request.url);
@@ -4042,10 +3939,6 @@ var ElectronChromeExtensions = class _ElectronChromeExtensions extends import_no
         }
       });
     } catch (err) {
-      console.error("[electron-chrome-extensions] Failed to set up SW script interception:", err);
-      console.error(
-        "Service worker API augmentation will not be available. chrome.commands, chrome.contextMenus, etc. may not work in MV3 extensions."
-      );
     }
   }
   checkWebContentsArgument(wc) {

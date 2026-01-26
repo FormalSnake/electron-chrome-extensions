@@ -11,19 +11,16 @@ export function generateSWPolyfill(): string {
 
   const electron = globalThis.electron;
   if (!electron) {
-    console.warn('[electron-chrome-extensions] electron bridge not available in SW');
     return;
   }
 
   const chrome = globalThis.chrome;
   if (!chrome || !chrome.runtime) {
-    console.warn('[electron-chrome-extensions] chrome.runtime not available in SW');
     return;
   }
 
   const extensionId = chrome.runtime.id;
   if (!extensionId) {
-    console.warn('[electron-chrome-extensions] no extension ID in SW');
     return;
   }
 
@@ -38,7 +35,6 @@ export function generateSWPolyfill(): string {
       var callback = typeof args[args.length - 1] === 'function' ? args.pop() : undefined;
 
       if (options.noop) {
-        console.warn(fnName + ' is not yet implemented.');
         if (callback) callback(options.defaultResponse);
         return Promise.resolve(options.defaultResponse);
       }
@@ -94,7 +90,6 @@ export function generateSWPolyfill(): string {
         });
       }
     } catch (e) {
-      console.warn('[electron-chrome-extensions] Failed to define', prop, e);
       // Last resort: direct assignment
       try { obj[prop] = value; } catch (e2) { /* ignore */ }
     }
@@ -174,7 +169,6 @@ export function generateSWPolyfill(): string {
   var tabsBase = chrome.tabs || {};
   // Always use our tabs.query implementation for proper currentWindow resolution
   var ourTabsQuery = invokeExtension('tabs.query');
-  console.log('[electron-chrome-extensions] SW: Overriding tabs.query with our implementation');
 
   if (!chrome.tabs || !chrome.tabs.onCreated) {
     chrome.tabs = Object.assign({}, tabsBase, {
@@ -304,7 +298,6 @@ export function generateSWPolyfill(): string {
         responseCallback = typeof messageOrOptions === 'function' ? messageOrOptions : optionsOrCallback;
       }
 
-      console.log('[electron-chrome-extensions] runtime.sendMessage:', message);
 
       // Use our custom IPC-based implementation
       var promise = electron.invokeExtension(extensionId, 'runtime.sendMessage', {}, message, options);
@@ -313,7 +306,6 @@ export function generateSWPolyfill(): string {
         promise.then(function(result) {
           responseCallback(result);
         }).catch(function(e) {
-          console.error('[electron-chrome-extensions] sendMessage error:', e);
           responseCallback(undefined);
         });
         return true; // Indicate async response
@@ -328,13 +320,10 @@ export function generateSWPolyfill(): string {
 
     // Listen for messages from our IPC using the electron bridge
     electron.onIpc('crx-runtime.onMessage', function(messageId, message, sender) {
-      console.log('[electron-chrome-extensions] SW received message:', messageId, message);
-
       var responded = false;
       var sendResponse = function(response) {
         if (!responded) {
           responded = true;
-          console.log('[electron-chrome-extensions] SW sending response:', messageId, response);
           electron.sendIpc('crx-runtime-response', messageId, response);
         }
       };
@@ -352,12 +341,11 @@ export function generateSWPolyfill(): string {
             result.then(function(promiseResult) {
               sendResponse(promiseResult);
             }).catch(function(e) {
-              console.error('[electron-chrome-extensions] onMessage promise error:', e);
               sendResponse(undefined);
             });
           }
         } catch (e) {
-          console.error('[electron-chrome-extensions] onMessage listener error:', e);
+          // Ignore listener errors
         }
       }
 
@@ -370,7 +358,6 @@ export function generateSWPolyfill(): string {
     // Override onMessage to use our listener array
     chrome.runtime.onMessage = {
       addListener: function(callback) {
-        console.log('[electron-chrome-extensions] SW onMessage.addListener called');
         onMessageListeners.push(callback);
         // Also register with original if it exists (for Electron's built-in messaging)
         if (originalOnMessage && originalOnMessage.addListener) {
@@ -410,14 +397,12 @@ export function generateSWPolyfill(): string {
 
     SWPort.prototype.postMessage = function(message) {
       if (!this._connected) return;
-      console.log('[electron-chrome-extensions] SW port.postMessage:', this._portId, message);
       electron.sendIpc('crx-port-message', this._portId, message);
     };
 
     SWPort.prototype.disconnect = function() {
       if (!this._connected) return;
       this._connected = false;
-      console.log('[electron-chrome-extensions] SW port.disconnect:', this._portId);
       electron.sendIpc('crx-port-disconnect', this._portId);
       delete activePorts[this._portId];
     };
@@ -427,7 +412,7 @@ export function generateSWPolyfill(): string {
         try {
           this._messageListeners[i](message, this);
         } catch (e) {
-          console.error('[electron-chrome-extensions] port.onMessage error:', e);
+          // Ignore listener errors
         }
       }
     };
@@ -438,7 +423,7 @@ export function generateSWPolyfill(): string {
         try {
           this._disconnectListeners[i](this);
         } catch (e) {
-          console.error('[electron-chrome-extensions] port.onDisconnect error:', e);
+          // Ignore listener errors
         }
       }
       delete activePorts[this._portId];
@@ -513,8 +498,6 @@ export function generateSWPolyfill(): string {
 
     // Listen for onConnect from main process
     electron.onIpc('crx-runtime.onConnect', function(portId, name, sender) {
-      console.log('[electron-chrome-extensions] SW received onConnect:', portId, name);
-
       var port = new SWPort(portId, name, sender);
       port._initEvents();
       activePorts[portId] = port;
@@ -524,14 +507,13 @@ export function generateSWPolyfill(): string {
         try {
           onConnectListeners[i](port);
         } catch (e) {
-          console.error('[electron-chrome-extensions] onConnect listener error:', e);
+          // Ignore listener errors
         }
       }
     });
 
     // Listen for port messages from main process
     electron.onIpc('crx-port-message', function(portId, message) {
-      console.log('[electron-chrome-extensions] SW received port message:', portId, message);
       var port = activePorts[portId];
       if (port) {
         port._receiveMessage(message);
@@ -540,7 +522,6 @@ export function generateSWPolyfill(): string {
 
     // Listen for port disconnects from main process
     electron.onIpc('crx-port-disconnect', function(portId) {
-      console.log('[electron-chrome-extensions] SW received port disconnect:', portId);
       var port = activePorts[portId];
       if (port) {
         port._handleDisconnect();
@@ -550,7 +531,6 @@ export function generateSWPolyfill(): string {
     // Override onConnect
     chrome.runtime.onConnect = {
       addListener: function(callback) {
-        console.log('[electron-chrome-extensions] SW onConnect.addListener called');
         onConnectListeners.push(callback);
       },
       removeListener: function(callback) {
@@ -651,12 +631,8 @@ export function generateSWPolyfill(): string {
     if (chrome.runtime.onConnect) globalThis.browser.runtime.onConnect = chrome.runtime.onConnect;
   }
 
-  console.log('[electron-chrome-extensions] browser.* APIs augmented, commands:', !!globalThis.browser.commands, 'onCommand:', !!globalThis.browser.commands?.onCommand, 'onConnect:', !!chrome.runtime.onConnect);
-
   // Note: Don't delete globalThis.electron in SW context - contextBridge makes it non-configurable
   // The electron bridge remains available but this is acceptable for trusted extension code
-
-  console.log('[electron-chrome-extensions] SW polyfill setup complete, chrome.commands:', !!chrome.commands);
 
 })();
 `

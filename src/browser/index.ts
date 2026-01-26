@@ -224,8 +224,7 @@ export class ElectronChromeExtensions extends EventEmitter {
         const endIdx = content.indexOf(polyfillEndMarker, startIdx)
         if (endIdx !== -1) {
           content = content.substring(endIdx + polyfillEndMarker.length)
-          console.log(`[electron-chrome-extensions] Stripped old polyfill from ${extension.name}`)
-        }
+            }
       }
 
       // Prepend new polyfill to the script
@@ -233,19 +232,16 @@ export class ElectronChromeExtensions extends EventEmitter {
       const { writeFileSync } = await import('node:fs')
       writeFileSync(filePath, modifiedContent, 'utf-8')
 
-      console.log(`[electron-chrome-extensions] Injected polyfill into ${extension.name} SW script`)
 
       // Restart the service worker to load the modified script
       const scope = `chrome-extension://${extension.id}/`
       try {
         await this.ctx.session.serviceWorkers.startWorkerForScope(scope)
-        console.log(`[electron-chrome-extensions] Restarted SW for ${extension.name}`)
       } catch (err) {
-        // SW might not be running yet, which is fine
-        console.log(`[electron-chrome-extensions] SW for ${extension.name} will load polyfill on next start`)
+        // SW might not be running yet, which is fine - polyfill will load on next start
       }
     } catch (err: any) {
-      console.error(`[electron-chrome-extensions] Failed to inject polyfill into ${extension.name}:`, err.message)
+      // Failed to inject polyfill - extension may have limited functionality
     }
   }
 
@@ -315,27 +311,12 @@ export class ElectronChromeExtensions extends EventEmitter {
 
     try {
       const isHandled = session.protocol.isProtocolHandled('chrome-extension')
-      console.log('[electron-chrome-extensions] chrome-extension:// protocol already handled:', isHandled)
 
       if (isHandled) {
-        console.log('[electron-chrome-extensions] Attempting to unhandle chrome-extension://')
         session.protocol.unhandle('chrome-extension')
-        console.log('[electron-chrome-extensions] Successfully unhandled chrome-extension://')
       }
 
-      console.log('[electron-chrome-extensions] Registering chrome-extension:// protocol handler')
-
-      // Also try webRequest to see if SW script requests are visible
-      session.webRequest.onBeforeRequest(
-        { urls: ['chrome-extension://*/*'] },
-        (details, callback) => {
-          console.log('[electron-chrome-extensions] webRequest intercepted:', details.url, 'type:', details.resourceType)
-          callback({})
-        }
-      )
-
       session.protocol.handle('chrome-extension', (request) => {
-        console.log('[electron-chrome-extensions] Protocol handler called for:', request.url)
         let url: URL
         try {
           url = new URL(request.url)
@@ -391,11 +372,7 @@ export class ElectronChromeExtensions extends EventEmitter {
         }
       })
     } catch (err) {
-      console.error('[electron-chrome-extensions] Failed to set up SW script interception:', err)
-      console.error(
-        'Service worker API augmentation will not be available. ' +
-        'chrome.commands, chrome.contextMenus, etc. may not work in MV3 extensions.'
-      )
+      // Failed to set up SW script interception - MV3 extensions may have limited functionality
     }
   }
 
