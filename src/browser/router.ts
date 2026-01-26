@@ -460,19 +460,23 @@ export class ExtensionRouter {
       const { type, extensionId } = listener
 
       if (targetExtensionId && targetExtensionId !== extensionId) {
+        console.log('[router] Skipping listener for different extension', { targetExtensionId, listenerExtensionId: extensionId })
         continue
       }
 
       if (type === 'service-worker') {
         const scope = `chrome-extension://${extensionId}/`
+        console.log('[router] Starting service worker for scope', { scope, ipcName, extensionId })
         this.session.serviceWorkers
           .startWorkerForScope(scope)
           .then((serviceWorker) => {
+            console.log('[router] Service worker started, sending IPC', { ipcName, extensionId, argsCount: args.length })
             serviceWorker.send(ipcName, ...args)
+            console.log('[router] IPC sent to service worker', { ipcName, extensionId })
           })
           .catch((error) => {
             d('failed to send %s to %s', eventName, extensionId)
-            console.error(error)
+            console.error('[router] Failed to send to service worker', { eventName, extensionId, error })
           })
       } else {
         if (listener.host.isDestroyed()) {
